@@ -1,0 +1,5 @@
+node_modules/
+.env
+data/contacts.json
+data/operations.json
+web/dist/

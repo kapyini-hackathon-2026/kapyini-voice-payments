@@ -1,0 +1,120 @@
+# KAPYIŊI — voice-first payments on PayPal
+
+*Kapyiŋi* means **tree** in Senoufo. It is the name of our agent.
+
+A voice-first payment assistant for people who are blind, have low vision, or cannot read, and for anyone who would rather talk than type. Built on the **PayPal Sandbox** for the PayPal AI Hackathon 2026.
+
+Kapyiŋi shows what PayPal could feel like with an assistant built in. You touch one big circle and speak: "envoie trente euros à mon frère", "je veux payer ma facture", "qu'est-ce qui s'est passé avec mon dernier paiement ?". Kapyiŋi reads the payment back, asks for your **fingerprint or Face ID** (or, without one, to **say the amount back**), hands you over to PayPal to approve, and tells you the result only once PayPal confirms it. People who prefer the usual screens choose the **classic mode**, and Kapyiŋi stays silent. Everything runs on the Sandbox, with test accounts and play money.
+
+## Two modes, chosen by the user
+
+On first launch Kapyiŋi asks aloud: *"Shall I speak every time you open the app?"*
+- **Yes → voice mode.** Kapyiŋi's night-blue stage opens, asks your first name, and turns on the device's **fingerprint / Face ID** (a passkey). On later visits, one touch and Kapyiŋi greets you by name. Keys on a computer: Space to talk, Esc to stop, R to repeat.
+- **No → classic mode.** The usual screens (send, payment requests, activity) and Kapyiŋi stays silent.
+
+The choice is remembered, and a "Voice mode / Classic mode" button on every screen changes it in one touch. Voice mode is for anyone who prefers to talk. Kapyiŋi never guesses who is blind.
+
+## The three locks
+
+| Lock | Who decides | Against | How |
+| --- | --- | --- | --- |
+| 1. Rules | Kapyiŋi's code, no AI | a tricked AI, odd amounts, duplicates | known contact, per-payment limit, open currency, same payment twice within 2 min needs consent, a prepared request lasts 5 min and works once, `PayPal-Request-Id` on every money call |
+| 2. Intent and owner | the user, on their own device | misheard words, a reflex "yes", someone else's voice | read-back first ("oui" only moves on), then **the fingerprint** (WebAuthn passkey with user verification, a challenge bound to that one payment, signature checked by the server). Without a passkey: the amount must be **said back** ("j'envoie trente euros") |
+| 3. Authorisation | PayPal | someone else holding the phone | log in and approve on PayPal's own page; Kapyiŋi never acts there |
+
+A bare "oui", "ok" or "je confirme" never sends money. A different amount said at the confirmation stops and asks. A voice payment on a device with a passkey is refused by the server without a valid fingerprint signature for that payment.
+
+**Why a fingerprint and not a voiceprint.** Browsers offer no speaker-verification API, and a voice can be recorded or imitated. A passkey is the web standard (WebAuthn): the fingerprint stays in the phone, the server only checks a signature.
+
+**What still happens on PayPal's page.** Kapyiŋi never logs in to PayPal for the user and never handles PayPal passwords. PayPal approves each payment on its own page. To avoid typing there, PayPal lets account holders log in with a passkey in supported countries (to be checked for the user's country and for the Sandbox). PayPal Vault (saving PayPal for later charges) was studied and set aside: it saves a payment method *for a merchant*, needs vetting and supported countries to go live, and does not fit sending money to friends.
+
+## What works
+
+| You say | Kapyiŋi | PayPal API |
+| --- | --- | --- |
+| "Envoie cent euros à mon frère" | Finds the contact by nickname, reads back, takes spoken corrections ("non, trente", "l'autre Amine"), asks for the amount said back, opens PayPal approval, captures, announces the verified result | Orders v2: create with `payee`, capture, show |
+| "Je veux payer ma facture" | Reads the bill aloud (merchant, amount, due date), asks for the amount said back, opens the bill on PayPal, checks when you come back that it is paid | Invoicing v2: search, show (`recipient_view_url`), status |
+| "Qu'est-ce qui s'est passé avec mon dernier paiement ?" / "mes opérations" | Refreshes the status from PayPal and says it | Orders v2 / Invoicing v2: show |
+| "Combien ai-je sur mon compte ?" | Says honestly that PayPal does not share the balance with outside apps | none |
+| "Je veux parler à un conseiller" | Says it cannot reach PayPal staff; offers to call a trusted person or open PayPal help | none |
+| "Répète", "annule", "où en suis-je ?", "parle plus lentement", "parle en anglais" | Works at any step, decided without AI | none |
+
+**Not only for blind users.** People who see the screen get the same journey by touch. A transaction card fills itself in (to whom, how much, check, confirm), every spoken answer is also a big numbered button, there is a "Payment requests" page with a two-step Pay button, and you can send with the keyboard. "Je préfère écrire" is there for noisy places or for people who cannot speak.
+
+**How Kapyiŋi talks.** On first launch Kapyiŋi asks aloud whether you use a screen reader. If you do, it speaks only through VoiceOver or TalkBack (an aria-live region), so you never hear two voices. If you don't, it reads its answers aloud, listens again after each question, gives one reminder after a silence, then pauses. Sounds and vibrations mark listening, a read-back, a confirmation and the result.
+
+## Run it
+
+Requirements: Node.js 22.12 or later, a PayPal Developer account. Optional: an Anthropic API key. Voice input needs Chrome, Edge or Safari. In Chrome, speech recognition goes through Google's servers.
+
+1. **Sandbox app.** In [developer.paypal.com](https://developer.paypal.com/dashboard/applications/sandbox) → Apps & Credentials → Sandbox, copy the Client ID and Secret. Check that the app has *Invoicing* among its features.
+2. **Test accounts.** Keep the Personal account (the payer). Create one or more extra accounts (the recipients).
+3. **Configure and start.**
+   ```bash
+   cp .env.example .env                               # Client ID, Secret, PAYPAL_PAYER_EMAIL, optional ANTHROPIC_API_KEY
+   cp data/contacts.example.json data/contacts.json   # recipients' Sandbox e-mails and nicknames
+   npm install
+   npm run build
+   npm run demo:invoice                               # optional: sends a fictional 45 € bill to the payer
+   npm start
+   ```
+4. Open <http://localhost:3000>, touch the circle, say "envoie cinq euros à mon frère", then approve on PayPal with the **Personal** Sandbox account.
+
+If a capture comes back as **pending**, the recipient does not hold that currency yet. Set `CURRENCIES` to the recipients' primary currency (often `USD`) first. After paying a bill on PayPal's page, come back to Kapyiŋi with the browser's back button: there is no automatic return from an invoice page.
+
+## Deploy on Vercel
+
+1. Create a free **Upstash Redis** database (Vercel → Storage → Marketplace, or upstash.com) and copy its REST URL and token. Without it, state is lost between requests and confirmations expire.
+2. Import the GitHub repository in Vercel. `vercel.json` already sets the build (`npm run build`), the output (`web/dist`) and routes `/api/*` and `/paypal/*` to the Express app in `api/index.js`.
+3. Environment variables: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_PAYER_EMAIL`, `APP_URL` (the production address, e.g. `https://kapyini-xxx.vercel.app`, used for PayPal's return and for passkeys), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `CONTACTS_JSON`, optional `ANTHROPIC_API_KEY`.
+4. Passkeys only work on the address in `APP_URL` (and `EXTRA_ORIGINS`). Preview URLs will not accept the fingerprint registered on production.
+
+Prototype limits: one demo user per deployment (no Kapyiŋi accounts yet), so everyone who opens the public link shares the same contacts, journal and passkeys.
+
+For interface work, run `npm run dev` and `npm run dev:web` side by side. The microphone only works on `localhost` or HTTPS.
+
+## Tests
+
+```bash
+npm test
+```
+
+32 tests cover:
+
+- the safety rules;
+- amounts spoken in words in French and English ("quatre-vingt-dix", "douze euros cinquante");
+- nicknames;
+- the whole conversation: read-back, spoken correction, "oui" refused at the confirmation, a different amount refused, a negation refused, "l'autre", cancel, repeat and settings;
+- a compromised AI that tries to send 9,999 €;
+- the bill journey;
+- the fingerprint: a voice payment is refused without a valid signature, the keyboard path is not affected;
+- both storage back-ends (memory and Redis);
+- the honest answers;
+- the send flow and the invoice flow against a **fake** PayPal server (idempotency, forged return, decline, cancel, a bill cannot be paid twice).
+
+Fakes prove our logic, not PayPal's or Claude's behaviour. Check the real Sandbox and the real Claude API by hand.
+
+## How it is built
+
+```
+phone browser (web/, React + Tailwind)  →  Kapyiŋi server (src/)  →  PayPal Sandbox API
+  ring, voice, card, live region              agent, rules, journal      orders, invoices,
+                                                    │                    approval pages
+                                                    └→ Claude API (understands one sentence, nothing else)
+```
+
+- `src/agent.js`: the conversation stages (collect → review → confirm, and the bill stages). Stateless: the draft is re-checked on every turn.
+- `src/spoken.js`: amounts said in digits or words → cents. This is what compares the amount said back.
+- `src/interpret.js`: sentence → `{ action, contact_name, amount, currency }` with Claude (JSON schema) or with rules; also the conversation words (repeat, cancel, yes, no).
+- `src/contacts.js`: name or nickname → contact (accents, one typo).
+- `src/rules.js`, `src/store.js`, `src/paypal.js`, `src/app.js`: checks, journal, PayPal client (Orders v2, Invoicing v2), routes.
+- `web/`: React + Vite + Tailwind CSS v4. Atkinson Hyperlegible typeface, light and dark modes, French and English.
+
+## AI tools used
+
+- **At runtime:** Claude Haiku 5.5 (Anthropic API, `claude-haiku-5-5`) turns one transcribed sentence into a structured intent with structured outputs. It receives the sentence and the contacts' names and nicknames only (no e-mails, no PayPal data). It has no tool, and it plays no part in confirming a payment. Speech recognition and synthesis use the browser's Web Speech API.
+- **To build it:** Claude (Anthropic) was used as a coding and design assistant.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

@@ -1,0 +1,351 @@
+// Voice mode: Kapyiŋi's stage (after the team's design). Opens only when the user chose the voice mode.
+// One gesture: touch the disc to talk, or to interrupt Kapyiŋi. On a computer: Space, Esc, R.
+// One loop: Kapyiŋi speaks → listens → asks the server what was understood → speaks again.
+// Every spoken answer also has a big button, and everything said is written on screen.
+import { useEffect, useRef, useState } from 'react';
+import { useKapyini } from '../context.js';
+import { STRINGS } from '../lib/i18n.js';
+import { VOICE } from '../lib/voice-strings.js';
+import { localCommand } from '../voice/commands.js';
+import { runLocal } from '../voice/runLocal.js';
+import { api } from '../lib/format.js';
+import { canListen, earcon, listenOnce, stopSpeaking } from '../voice/speech.js';
+import { btn } from '../components/ui.jsx';
+import { VoiceHeader, VoiceOrb } from '../components/voice-ui.jsx';
+import TransactionCard, { InvoiceCard } from '../components/TransactionCard.jsx';
+
+const REVIEWS = ['REVIEW', 'INVOICE_REVIEW', 'INVOICE_PICK', 'FIX_WHAT', 'AMOUNT_MISMATCH', 'DUPLICATE'];
+const CONFIRMS = ['CONFIRM_ASK', 'SAY_AMOUNT', 'USE_PASSKEY', 'PASSKEY_HINT', 'INVOICE_CONFIRM_ASK', 'INVOICE_SAY_AMOUNT', 'INVOICE_AMOUNT_MISMATCH'];
+
+export default function Agent({ arg }) {
+  const kapyini = useKapyini();
+  const { t, c, lang, setLang, output, setOutput, setRate, rate, config, flow, setFlow, say, go, confirmPayment, handOver, setMode, userName } = kapyini;
+  const v = VOICE[lang];
+  const [phase, setPhase] = useState('idle'); // idle | listening | thinking | speaking | passkey | problem
+  const [awake, setAwake] = useState(Boolean(flow.justOnboarded || flow.pendingText || arg === 'listen'));
+  const [heard, setHeard] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [choices, setChoices] = useState([]);
+  const [draft, setDraft] = useState({});
+  const [invoice, setInvoice] = useState(null);
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const draftRef = useRef({});
+  const last = useRef({ text: '', question: false, expecting: null });
+  const silences = useRef(0);
+  const failures = useRef(0);
+  const stopRef = useRef(() => {});
+  const alive = useRef(true);
+  const orbRef = useRef();
+  const h1 = useRef();
+
+  useEffect(() => {
+    alive.current = true;
+    document.title = `${v.voiceButton} · Kapyiŋi`;
+    if (flow.pendingText) {
+      // A sentence said on another page ("envoie vingt euros à mon frère") continues here.
+      const text = flow.pendingText;
+      setFlow((f) => ({ ...f, pendingText: null }));
+      submit(text);
+    } else if (flow.justOnboarded) {
+      setFlow((f) => ({ ...f, justOnboarded: false }));
+      respond(v.onboard.ready(userName));
+    } else if (arg === 'listen') listen();
+    else h1.current?.focus();
+    return () => { alive.current = false; stopRef.current(); stopSpeaking(); };
+  }, []);
+
+  // Space: talk · Esc: stop · R: repeat (the team's design, laptop screens).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.closest?.('input, textarea, select')) return;
+      if (e.code === 'Space') { e.preventDefault(); onOrb(); }
+      else if (e.key === 'Escape') { stopRef.current(); stopSpeaking(); setPhase('idle'); }
+      else if (e.key === 'r' || e.key === 'R') { if (last.current.text) respond(last.current.text, last.current); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const confirming = ['confirm', 'invoice_confirm'].includes(draft.stage);
+  const wantsFinger = draft.stage === 'confirm' && draft.method === 'passkey';
+  const orbState = phase !== 'idle' ? phase : wantsFinger ? 'passkey' : confirming ? 'confirm' : 'idle';
+
+  // ----- speaking -----
+  async function respond(raw, { question = false, expecting = null, override } = {}) {
+    if (!alive.current || !raw) return;
+    const text = raw.charAt(0).toUpperCase() + raw.slice(1);
+    last.current = { text, question, expecting };
+    setAnswer(text);
+    setPhase(output === 'voice' ? 'speaking' : 'idle');
+    await say(text, override);
+    if (!alive.current) return;
+    setPhase('idle');
+    // With Kapyiŋi's own voice we know when it stopped, so it listens right away.
+    // With a screen reader we cannot know, so the user touches the disc when ready.
+    if (question && output === 'voice' && canListen) listen();
+    else orbRef.current?.focus();
+  }
+
+  // ----- listening -----
+  async function listen() {
+    if (!canListen) { setTyping(true); return respond(t.noMic); }
+    stopRef.current();
+    stopSpeaking();
+    earcon.listen();
+    setPhase('listening');
+    const session = listenOnce({ lang, onInterim: (x) => x && setHeard(x) });
+    stopRef.current = session.stop;
+    let text = '';
+    try {
+      text = await session.promise;
+    } catch (e) {
+      if (!alive.current) return;
+      setPhase('idle');
+      if (e.message === 'denied') { setTyping(true); return respond(t.micDenied); }
+      failures.current += 1;
+      return respond(failures.current >= 2 ? t.noisy : t.stillListening.default, { question: failures.current < 2, expecting: last.current.expecting });
+    }
+    if (!alive.current) return;
+    earcon.stop();
+    setPhase('idle');
+    if (!text) {
+      // Silence: one gentle reminder of what to say, then a pause. Silence never means "yes".
+      silences.current += 1;
+      if (silences.current === 1 && last.current.question) {
+        return respond(t.stillListening[last.current.expecting] || t.stillListening.default, { question: true, expecting: last.current.expecting });
+      }
+      silences.current = 0;
+      if (last.current.question) respond(t.paused);
+      return;
+    }
+    silences.current = 0;
+    failures.current = 0;
+    submit(text);
+  }
+
+  function onOrb() {
+    if (!awake) {
+      // Next visits: browsers need one touch before Kapyiŋi may speak. Then it greets first.
+      setAwake(true);
+      return respond(v.greet(userName), { question: true });
+    }
+    if (phase === 'listening') return stopRef.current();
+    if (phase === 'thinking' || phase === 'passkey') return;
+    if (wantsFinger) return fingerprint();
+    listen(); // also interrupts Kapyiŋi while it speaks
+  }
+
+  // ----- the fingerprint: the phone's sensor signs THIS payment; the server checks the signature -----
+  async function fingerprint() {
+    if (busy) return;
+    setBusy(true);
+    setPhase('passkey');
+    const r = await confirmPayment(draftRef.current.prepareId, { passkey: true });
+    if (!alive.current) return;
+    setBusy(false);
+    if (r.ok) return; // handOver() already speaks and opens PayPal
+    setPhase('problem');
+    const code = r.errors?.[0];
+    if (code === 'CONFIRMATION_EXPIRED') { draftRef.current = {}; setDraft({}); return respond(t.errors.CONFIRMATION_EXPIRED); }
+    await respond(code === 'PASSKEY_CANCELLED' ? v.passkeyCancelled : v.passkeyRefused, { question: true, expecting: 'yesno' });
+  }
+
+  // ----- understanding -----
+  async function submit(text, { choiceId } = {}) {
+    setAwake(true);
+    // Pages, language, voice, speed: decided in the browser. "Répète" stays with the conversation.
+    const local = localCommand(text);
+    if (local && !local.repeat && !(local.nav === 'back' && draftRef.current.stage)) {
+      setHeard(text);
+      return runLocal(local, { ...kapyini, repeatText: last.current.text });
+    }
+    if (/^(mode classique|passe en mode classique|classic mode)$/i.test(text.trim())) return toClassic();
+    setHeard(text);
+    setChoices([]);
+    setPhase('thinking');
+    setBusy(true);
+    const data = await api('/api/agent', { body: { text, draft: draftRef.current, lang, choiceId } });
+    setBusy(false);
+    if (!alive.current) return;
+    if (!data.ok || !data.reply) { setPhase('idle'); return respond(t.errors[data.errors?.[0]] || t.errors.DEFAULT); }
+
+    const { code, params = {} } = data.reply;
+    if (code !== 'REPEAT' && code !== 'SETTING' && code !== 'HELP' && !code.startsWith('WHERE')) {
+      draftRef.current = data.draft || {};
+      setDraft(draftRef.current);
+      setInvoice(params.invoice || null);
+    }
+    const expecting = data.draft?.expecting || null;
+    const question = Boolean(expecting);
+    if (REVIEWS.includes(code)) earcon.review();
+    if (CONFIRMS.includes(code)) earcon.confirm();
+
+    switch (code) {
+      case 'CONFIRMED':
+        return confirmPayment(data.prepareId).then((r) => { if (!r.ok) respond((r.errors || ['DEFAULT']).map((e) => t.errors[e] || t.errors.DEFAULT).join(' ')); });
+      case 'USE_PASSKEY':
+        setChoices([]);
+        return respond(lang === 'fr' ? 'Touchez le grand rond, puis posez votre doigt sur le capteur.' : 'Touch the big circle, then place your finger on the sensor.');
+      case 'INVOICE_CONFIRMED':
+        return handOver({ kind: 'invoice', url: data.payUrl, operationId: data.operationId });
+      case 'REPEAT':
+        return respond(last.current.text || t.agent.HELP(), { question: last.current.question, expecting: last.current.expecting });
+      case 'SETTING': {
+        const { key, value } = params;
+        const override = {};
+        if (key === 'lang') { setLang(value); override.lang = value; }
+        if (key === 'output') { setOutput(value); override.output = value; }
+        if (key === 'rate') {
+          const next = value === 'slower' ? (rate === 'fast' ? 'normal' : 'slow') : (rate === 'slow' ? 'normal' : 'fast');
+          setRate(next); override.rate = next;
+        }
+        return respond(STRINGS[override.lang || lang].agent.SETTING(params), { override });
+      }
+      case 'STATUS': {
+        const s = await api(`/api/operations/${encodeURIComponent(params.operationId)}?refresh=1`);
+        if (!alive.current) return;
+        if (!s.ok) return respond(t.errors.DEFAULT);
+        setChoices([{ label: t.seeDetail, href: `#status/${s.operation.id}` }]);
+        return respond(t.agent.STATUS({ op: s.operation }, c));
+      }
+      case 'ACTIVITY':
+        setChoices([{ label: t.homeActivity, href: '#activity' }]);
+        return respond(t.agent.ACTIVITY(params, c));
+      default: {
+        setChoices((data.choices || []).map((ch) => {
+          const lbl = ch.localized ? t.choiceLabels[ch.label] : ch.label;
+          return {
+            ...ch,
+            label: typeof lbl === 'function' ? lbl(config.trusted?.name || '') : lbl,
+            say: ch.localized && typeof t.choiceLabels[ch.say] === 'string' ? t.choiceLabels[ch.say] : ch.say,
+          };
+        }));
+        const build = v.agent[code] || t.agent[code] || t.agent.NOT_UNDERSTOOD;
+        return respond(build(params, c), { question, expecting });
+      }
+    }
+  }
+
+  // Touch buttons for people who see the card: same rules (fingerprint when a passkey exists).
+  async function sendByTouch() {
+    if (busy) return;
+    stopRef.current();
+    if (draft.stage === 'invoice_confirm' && invoice) {
+      setBusy(true);
+      const r = await api(`/api/invoices/${encodeURIComponent(invoice.id)}/pay`, { body: {} });
+      if (r.ok) return handOver({ kind: 'invoice', url: r.payUrl, operationId: r.operationId });
+      setBusy(false);
+      return respond((r.errors || ['DEFAULT']).map((e) => t.errors[e] || t.errors.DEFAULT).join(' '));
+    }
+    if (wantsFinger) return fingerprint();
+    setBusy(true);
+    const r = await confirmPayment(draft.prepareId);
+    if (!r.ok) { setBusy(false); respond((r.errors || ['DEFAULT']).map((e) => t.errors[e] || t.errors.DEFAULT).join(' ')); }
+  }
+
+  async function toClassic() {
+    stopRef.current();
+    await say(v.switchedClassic);
+    setMode('classic');
+    go('#home');
+  }
+
+  const showCard = Boolean(draft.contactId || draft.amount || invoice);
+  const pill = !awake ? v.pills.voice : { listening: v.pills.listening, thinking: v.pills.thinking, passkey: v.pills.passkey }[orbState] || (confirming ? v.pills.confirm : v.pills.voice);
+  const hint = !awake ? v.resume : { idle: t.orb.idle, listening: t.orb.listening, thinking: t.orb.thinking, speaking: t.orb.speaking, confirm: t.orb.confirm, passkey: v.passkeyAsk, problem: t.orb.idle }[orbState];
+  const orbLabel = !awake ? v.resume : wantsFinger ? v.passkeyButton(c.money(draft.amount, draft.currency)) : t.orbLabel[orbState] || t.orbLabel.idle;
+
+  return (
+    <div className="voice-theme flex flex-col">
+      <VoiceHeader pill={pill} tone={orbState === 'problem' ? 'problem' : confirming ? 'key' : 'voice'} onClassic={toClassic} />
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-5 pb-10 sm:px-8">
+        <h1 ref={h1} tabIndex={-1} className="sr-only">{v.voiceButton}</h1>
+        {!config.sandboxReady && <p className="mx-auto mb-4 max-w-xl rounded-2xl border border-wait/50 bg-wait-soft px-4 py-3 text-center text-sm">{t.notConfigured}</p>}
+
+        <div className={`grid flex-1 items-center gap-8 ${showCard ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]' : ''}`}>
+          <section aria-label="Kapyiŋi" className="flex flex-col items-center text-center">
+            <div className="mt-6 sm:mt-10">
+              <VoiceOrb ref={orbRef} state={orbState} small={showCard} label={orbLabel} onClick={onOrb} disabled={phase === 'thinking' || phase === 'passkey'} aria-pressed={phase === 'listening'} />
+            </div>
+            <p className="mt-10 text-base font-bold text-cyan" aria-hidden="true">{hint}</p>
+
+            <div className="mt-6 w-full max-w-2xl">
+              {answer ? (
+                <>
+                  <p className="text-sm text-slate" aria-hidden="true">Kapyiŋi</p>
+                  <p key={answer} className="appear mt-1 text-2xl font-bold leading-snug sm:text-[1.9rem]">“{answer}”</p>
+                </>
+              ) : !awake ? (
+                <p className="text-2xl font-bold">{v.resume}</p>
+              ) : null}
+              {heard && (
+                <p className="mt-5 text-lg font-bold text-cyan sm:text-xl">
+                  <span className="mr-2 align-middle text-sm font-normal text-slate">{t.youSaid}</span>“{heard}”
+                </p>
+              )}
+            </div>
+
+            {choices.length > 0 && (
+              <ul className="mt-8 grid w-full max-w-md gap-3">
+                {choices.map((ch, i) => (
+                  <li key={`${ch.label}-${i}`}>
+                    {ch.href ? (
+                      <a className={`${btn.quiet} !bg-transparent`} href={ch.href} target={ch.href.startsWith('http') ? '_blank' : undefined} rel="noreferrer">{ch.label}</a>
+                    ) : (
+                      <button type="button" disabled={busy} onClick={() => submit(ch.say, { choiceId: ch.id })}
+                        className={ch.kind === 'yes' ? `${btn.primary} !bg-[#0070e0] !text-white` : `${btn.quiet} !bg-transparent`}>
+                        <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-full border-2 border-current text-base">{ch.n || i + 1}</span>
+                        <span>{ch.label}</span>
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {showCard && (
+            <div className="w-full lg:sticky lg:top-6">
+              {invoice ? (
+                <InvoiceCard invoice={invoice} highlight={confirming}>
+                  {confirming && <div className="mt-5 grid gap-3"><button type="button" className={`${btn.primary} !bg-[#0070e0] !text-white`} disabled={busy} onClick={sendByTouch}>{t.payButton(c.money(invoice.amount, invoice.currency))}</button></div>}
+                </InvoiceCard>
+              ) : (
+                <TransactionCard draft={draft}>
+                  {confirming && (
+                    <div className="mt-5 grid gap-3">
+                      <button type="button" className={`${btn.primary} !bg-[#0070e0] !text-white`} disabled={busy} onClick={sendByTouch}>
+                        {wantsFinger ? v.passkeyButton(c.money(draft.amount, draft.currency)) : t.sendButton(c.money(draft.amount, draft.currency))}
+                      </button>
+                      <p className="text-center text-sm text-slate">{t.paypalNext}</p>
+                    </div>
+                  )}
+                </TransactionCard>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mx-auto mt-10 w-full max-w-md">
+          {typing ? (
+            <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (typed.trim()) { submit(typed.trim()); setTyped(''); } }}>
+              <label htmlFor="typed" className="font-bold">{t.typeLabel}</label>
+              <input id="typed" autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" placeholder={t.typePlaceholder}
+                className="min-h-14 w-full rounded-2xl border-2 border-line bg-mist px-4 text-lg text-text placeholder:text-slate" />
+              <button type="submit" disabled={busy} className={`${btn.primary} !bg-[#0070e0] !text-white`}>{t.typeSend}</button>
+            </form>
+          ) : (
+            <div className="flex flex-wrap justify-center gap-2 text-sm">
+              {[[t.preferTyping, () => setTyping(true)], [t.homeActivity, () => go('#activity')], [t.homeInvoices, () => go('#invoices')], [t.homeSettings, () => go('#settings')]].map(([label, fn]) => (
+                <button key={label} type="button" onClick={fn} className="min-h-12 rounded-full border border-line px-4 font-bold text-slate hover:text-text">{label}</button>
+              ))}
+            </div>
+          )}
+          <p className="mt-6 hidden text-center text-xs text-slate md:block" aria-hidden="true">{v.keys}</p>
+        </div>
+      </main>
+    </div>
+  );
+}

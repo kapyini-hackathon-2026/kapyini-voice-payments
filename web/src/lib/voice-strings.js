@@ -1,0 +1,156 @@
+// Sentences added for voice-only use: lists read out with numbers, and page changes said aloud.
+// Agent replies here take priority over the ones in i18n.js.
+const nb = (s) => s.replace(/ ([?!:;])/g, ' $1').replace(/« /g, '« ').replace(/ »/g, ' »');
+const listFr = (names) => names.map((n, i) => `${i + 1} : ${n}`).join(' ; ');
+const listEn = (names) => names.map((n, i) => `${i + 1}: ${n}`).join('; ');
+
+const RAW = {
+  fr: {
+    agent: {
+      ASK_CONTACT: (p) => nb(`À qui voulez-vous envoyer de l’argent ? Vos contacts : ${listFr(p.names || [])}. Dites un nom, ou un numéro.`),
+      CONTACT_NOT_FOUND: (p) => nb(`Je ne trouve pas « ${p.heard} » dans vos contacts. Vos contacts : ${listFr(p.names || [])}. Dites un nom, ou un numéro.`),
+      WHICH_CONTACT: (p) => nb(`J’ai plusieurs contacts qui ressemblent à ce nom : ${listFr(p.names || [])}. Lequel ? Dites le numéro.`),
+      ASK_CURRENCY: (p, c) => nb(`En ${c.currencies()} ? Vous pouvez aussi dire : le premier, ou le deuxième.`),
+      CONFIRM_ASK: (p, c) => p.method === 'passkey'
+        ? nb(`${c.words(p.summary.amount, p.summary.currency)} pour ${p.summary.recipient.name}. Je l’envoie ? Dites oui, puis posez votre doigt.`)
+        : nb(`Pour envoyer, dites : j’envoie ${c.words(p.summary.amount, p.summary.currency)}. Pour arrêter, dites : annule.`),
+      USE_PASSKEY: () => 'Posez votre doigt sur le capteur, ou regardez l’écran.',
+      PASSKEY_HINT: () => nb('Dites oui, puis posez votre doigt. Ou dites : annule.'),
+    },
+    // ----- first launch and modes -----
+    onboard: {
+      start: 'Toucher pour commencer',
+      startHint: 'Kapyiŋi va vous parler.',
+      srLink: 'J’utilise un lecteur d’écran',
+      askMode: 'Bonjour, je suis Kapyiŋi, votre assistant pour PayPal. Voulez-vous que je vous parle à chaque ouverture ? Dites oui ou non.',
+      askModeShort: 'Voulez-vous que je vous parle à chaque ouverture ? Dites oui ou non.',
+      yesVoice: 'Oui, mode vocal',
+      yesVoiceHint: 'Kapyiŋi vous accompagne à la voix.',
+      noClassic: 'Non, mode classique',
+      noClassicHint: 'Les écrans habituels, sans voix.',
+      askName: 'Comment dois-je vous appeler ?',
+      skip: 'Passer',
+      nameSaved: (n) => `Enchanté, ${n}.`,
+      askPasskey: 'Pour protéger votre argent, j’utiliserai l’empreinte ou le visage de cet appareil. Touchez le grand rond, puis posez votre doigt.',
+      passkeyButton: 'Activer l’empreinte',
+      passkeyLater: 'Plus tard',
+      passkeyDone: 'C’est fait. Je vous demanderai votre empreinte avant chaque envoi d’argent.',
+      passkeyNone: 'Cet appareil ne propose pas d’empreinte. Pour confirmer un envoi, vous redirez le montant à voix haute.',
+      passkeyFailed: 'L’empreinte n’a pas été enregistrée. Vous pourrez réessayer dans les réglages. En attendant, vous confirmerez en redisant le montant.',
+      classicChosen: 'D’accord. Je reste silencieux. Vous pourrez revenir au mode vocal à tout moment.',
+      ready: (n) => `${n ? `${n}, je` : 'Je'} suis prêt. Touchez le grand rond et dites ce que vous voulez faire, par exemple : envoie vingt euros à mon frère.`,
+    },
+    greet: (n) => `Bonjour${n ? ` ${n}` : ''}. Que puis-je faire pour vous ?`,
+    resume: 'Touchez pour parler à Kapyiŋi',
+    resumeHint: 'Kapyiŋi vous écoutera ensuite.',
+    toClassic: 'Mode classique',
+    toVoice: 'Mode vocal',
+    toVoiceHint: 'Kapyiŋi vous accompagne à la voix',
+    switchedClassic: 'Mode classique activé. Je reste silencieux.',
+    pills: { voice: 'Mode vocal', listening: 'J’écoute', thinking: 'Je réfléchis', confirm: 'À confirmer', passkey: 'Empreinte demandée', done: 'Confirmé par PayPal' },
+    keys: 'Espace : parler · Échap : arrêter · R : répéter',
+    passkeyAsk: 'Posez votre doigt sur le capteur, ou regardez l’écran, pour confirmer.',
+    passkeyButton: (amount) => `Confirmer ${amount} avec mon empreinte`,
+    passkeyCancelled: 'Empreinte annulée. Rien n’est parti. Dites oui pour réessayer, ou annule.',
+    passkeyRefused: 'Je n’ai pas pu vérifier l’empreinte. Rien n’est parti. Dites oui pour réessayer, ou annule.',
+    classic: {
+      hello: (n) => `Bonjour${n ? ` ${n}` : ''}`,
+      intro: 'Que voulez-vous faire ?',
+      send: 'Envoyer', sendHint: 'À un contact',
+      invoices: 'Demandes de paiement', invoicesHint: 'Factures à régler',
+      activity: 'Activité', activityHint: 'Vos paiements',
+      settings: 'Réglages',
+      recent: 'Dernières opérations',
+      seeAll: 'Tout voir',
+      none: 'Aucune opération pour l’instant.',
+      sandbox: 'Démo Sandbox PayPal : argent fictif.',
+    },
+    settings: { modeLabel: 'Mode', passkeyLabel: 'Empreinte', passkeyOn: 'Activée sur cet appareil', passkeyOff: 'Non activée', passkeyEnable: 'Activer l’empreinte', passkeyReset: 'Supprimer l’empreinte', nameLabel: 'Votre prénom' },
+    passkeyErrors: { PASSKEY_REQUIRED: 'Il faut votre empreinte pour confirmer cet envoi.', PASSKEY_CANCELLED: 'Empreinte annulée. Rien n’est parti.', PASSKEY_REFUSED: 'Empreinte non vérifiée. Rien n’est parti.' },
+    pages: { '#home': 'l’accueil', '#activity': 'vos opérations', '#invoices': 'vos demandes de paiement', '#settings': 'les réglages', '#send': 'l’envoi avec le clavier' },
+    opening: (page) => `J’ouvre ${page}.`,
+    goingBack: 'Je reviens en arrière.',
+    langToggle: { fr: 'D’accord, je parle français.', en: 'OK, I will speak English.' },
+    voiceButton: 'Parler à Kapyiŋi',
+    voiceListening: 'J’écoute… touchez pour arrêter',
+    noSpeech: 'Je n’ai rien entendu. Touchez le micro et parlez.',
+  },
+  en: {
+    agent: {
+      ASK_CONTACT: (p) => `Who do you want to send money to? Your contacts: ${listEn(p.names || [])}. Say a name, or a number.`,
+      CONTACT_NOT_FOUND: (p) => `I can’t find “${p.heard}” in your contacts. Your contacts: ${listEn(p.names || [])}. Say a name, or a number.`,
+      WHICH_CONTACT: (p) => `Several contacts sound like that name: ${listEn(p.names || [])}. Which one? Say the number.`,
+      ASK_CURRENCY: (p, c) => `In ${c.currencies()}? You can also say: the first, or the second.`,
+      CONFIRM_ASK: (p, c) => p.method === 'passkey'
+        ? `${c.words(p.summary.amount, p.summary.currency)} to ${p.summary.recipient.name}. Shall I send it? Say yes, then place your finger.`
+        : `To send, say: I send ${c.words(p.summary.amount, p.summary.currency)}. To stop, say: cancel.`,
+      USE_PASSKEY: () => 'Place your finger on the sensor, or look at the screen.',
+      PASSKEY_HINT: () => 'Say yes, then place your finger. Or say: cancel.',
+    },
+    onboard: {
+      start: 'Touch to start',
+      startHint: 'Kapyiŋi will talk to you.',
+      srLink: 'I use a screen reader',
+      askMode: 'Hello, I’m Kapyiŋi, your assistant for PayPal. Shall I speak every time you open the app? Say yes or no.',
+      askModeShort: 'Shall I speak every time you open the app? Say yes or no.',
+      yesVoice: 'Yes, voice mode',
+      yesVoiceHint: 'Kapyiŋi guides you by voice.',
+      noClassic: 'No, classic mode',
+      noClassicHint: 'The usual screens, no voice.',
+      askName: 'What should I call you?',
+      skip: 'Skip',
+      nameSaved: (n) => `Nice to meet you, ${n}.`,
+      askPasskey: 'To protect your money, I’ll use this device’s fingerprint or face. Touch the big circle, then place your finger.',
+      passkeyButton: 'Turn on fingerprint',
+      passkeyLater: 'Later',
+      passkeyDone: 'Done. I’ll ask for your fingerprint before every payment.',
+      passkeyNone: 'This device has no fingerprint option. To confirm a payment, you’ll say the amount back.',
+      passkeyFailed: 'The fingerprint was not saved. You can try again in Settings. Until then, you’ll confirm by saying the amount back.',
+      classicChosen: 'OK. I’ll stay silent. You can switch back to voice mode at any time.',
+      ready: (n) => `${n ? `${n}, I’m` : 'I’m'} ready. Touch the big circle and say what you want to do, for example: send twenty euros to my brother.`,
+    },
+    greet: (n) => `Hello${n ? ` ${n}` : ''}. What can I do for you?`,
+    resume: 'Touch to talk to Kapyiŋi',
+    resumeHint: 'Kapyiŋi will then listen.',
+    toClassic: 'Classic mode',
+    toVoice: 'Voice mode',
+    toVoiceHint: 'Kapyiŋi guides you by voice',
+    switchedClassic: 'Classic mode on. I’ll stay silent.',
+    pills: { voice: 'Voice mode', listening: 'Listening', thinking: 'Thinking', confirm: 'To confirm', passkey: 'Fingerprint requested', done: 'Confirmed by PayPal' },
+    keys: 'Space: talk · Esc: stop · R: repeat',
+    passkeyAsk: 'Place your finger on the sensor, or look at the screen, to confirm.',
+    passkeyButton: (amount) => `Confirm ${amount} with my fingerprint`,
+    passkeyCancelled: 'Fingerprint cancelled. Nothing was sent. Say yes to try again, or cancel.',
+    passkeyRefused: 'I couldn’t verify the fingerprint. Nothing was sent. Say yes to try again, or cancel.',
+    classic: {
+      hello: (n) => `Hello${n ? ` ${n}` : ''}`,
+      intro: 'What would you like to do?',
+      send: 'Send', sendHint: 'To a contact',
+      invoices: 'Payment requests', invoicesHint: 'Bills to pay',
+      activity: 'Activity', activityHint: 'Your payments',
+      settings: 'Settings',
+      recent: 'Latest payments',
+      seeAll: 'See all',
+      none: 'No payments yet.',
+      sandbox: 'PayPal Sandbox demo: play money.',
+    },
+    settings: { modeLabel: 'Mode', passkeyLabel: 'Fingerprint', passkeyOn: 'On for this device', passkeyOff: 'Off', passkeyEnable: 'Turn on fingerprint', passkeyReset: 'Remove fingerprint', nameLabel: 'Your first name' },
+    passkeyErrors: { PASSKEY_REQUIRED: 'Your fingerprint is needed to confirm this payment.', PASSKEY_CANCELLED: 'Fingerprint cancelled. Nothing was sent.', PASSKEY_REFUSED: 'Fingerprint not verified. Nothing was sent.' },
+    pages: { '#home': 'the home page', '#activity': 'your payments', '#invoices': 'your payment requests', '#settings': 'the settings', '#send': 'sending with the keyboard' },
+    opening: (page) => `Opening ${page}.`,
+    goingBack: 'Going back.',
+    langToggle: { fr: 'D’accord, je parle français.', en: 'OK, I will speak English.' },
+    voiceButton: 'Talk to Kapyiŋi',
+    voiceListening: 'Listening… touch to stop',
+    noSpeech: 'I didn’t hear anything. Touch the microphone and speak.',
+  },
+};
+
+// French typography everywhere in the French strings.
+function deepNb(v) {
+  if (typeof v === 'string') return nb(v);
+  if (typeof v === 'function') return (...a) => { const r = v(...a); return typeof r === 'string' ? nb(r) : r; };
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deepNb(x)]));
+  return v;
+}
+export const VOICE = { fr: deepNb(RAW.fr), en: RAW.en };
