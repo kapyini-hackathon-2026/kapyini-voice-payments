@@ -1,0 +1,5 @@
+[
+  { "id": "amine", "name": "Amine Benali", "aliases": ["mon frère", "frérot"], "email": "amine@personal.example.com" },
+  { "id": "awa", "name": "Awa Koné", "aliases": ["ma sœur"], "email": "awa@personal.example.com" },
+  { "id": "moussa", "name": "Moussa Traoré", "aliases": ["mon ami"], "email": "moussa@personal.example.com" }
+]

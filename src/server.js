@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { createPayPalClient } from './paypal.js';
 import { createStore } from './store.js';
 import { createInterpreter } from './interpret.js';
+import exampleContacts from '../data/contacts.example.json' with { type: 'json' };
 
 const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 
@@ -36,10 +37,12 @@ export function buildServer(env = process.env) {
   if (env.CONTACTS_JSON) {
     contacts = JSON.parse(env.CONTACTS_JSON);
     contactsFrom = 'CONTACTS_JSON';
+  } else if (existsSync(root('data/contacts.json'))) {
+    contacts = JSON.parse(readFileSync(root('data/contacts.json'), 'utf8'));
+    contactsFrom = 'data/contacts.json';
   } else {
-    const file = existsSync(root('data/contacts.json')) ? root('data/contacts.json') : root('data/contacts.example.json');
-    contacts = JSON.parse(readFileSync(file, 'utf8'));
-    contactsFrom = file.split('/').slice(-2).join('/');
+    contacts = exampleContacts;
+    contactsFrom = 'data/contacts.example.json (set CONTACTS_JSON for your own contacts)';
   }
 
   const paypal = env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET

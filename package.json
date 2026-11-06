@@ -1,7 +1,7 @@
 {
   "name": "kapyini-voice-payments",
   "version": "1.1.0",
-  "description": "S\u00e9same \u2014 a voice-first, accessible assistant for PayPal payments (PayPal Sandbox, PayPal AI Hackathon 2026).",
+  "description": "KAPYIŊI — a voice-first, accessible assistant for PayPal payments (PayPal Sandbox, PayPal AI Hackathon 2026).",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -27,5 +27,5 @@
     "tailwindcss": "^4.3.4",
     "vite": "^8.3.5"
   },
-  "author": "Wahon Jean-Baptiste Ouattara and the S\u00e9same team"
+  "author": "Wahon Jean-Baptiste Ouattara and the Kapyiŋi team"
 }
