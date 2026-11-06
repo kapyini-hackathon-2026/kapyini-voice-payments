@@ -79,12 +79,31 @@ before(async () => {
   });
   app = await new Promise((r) => { const s = server.listen(0, () => r(s)); });
   appUrl = `http://127.0.0.1:${app.address().port}`;
+  me = client();
+  assert.equal((await me.post('/api/account', { name: 'Awa' })).status, 201);
 });
 
 after(() => { fake.close(); app.close(); });
 
-const post = (path, body) => fetch(appUrl + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const get = (path) => fetch(appUrl + path, { redirect: 'manual' });
+// A browser with its own cookie: one Kapyiŋi space per client.
+function client() {
+  let cookie = '';
+  const call = async (path, init = {}) => {
+    const res = await fetch(appUrl + path, { redirect: 'manual', ...init, headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) } });
+    const set = res.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    return res;
+  };
+  return {
+    post: (path, body) => call(path, { method: 'POST', body: JSON.stringify(body) }),
+    patch: (path, body) => call(path, { method: 'PATCH', body: JSON.stringify(body) }),
+    del: (path) => call(path, { method: 'DELETE' }),
+    get: (path) => call(path),
+  };
+}
+let me;
+const post = (path, body) => me.post(path, body);
+const get = (path) => me.get(path);
 
 async function sendAndApprove(amount, { simulateDecline = false } = {}) {
   const prep = await (await post('/api/send/prepare', { contactId: 'amine', amount, currency: 'EUR' })).json();
@@ -178,7 +197,8 @@ test('payment request: listed with its payer link, paid on PayPal, then verified
 });
 
 test('a payment prepared by voice on a device with a passkey needs the fingerprint for that payment', async () => {
-  await store.kvSet('passkeys', [{ id: 'cred-1', publicKey: 'AAAA', counter: 0, transports: [] }]);
+  const { account } = await (await get('/api/config')).json();
+  await store.forUser(account.id).kvSet('passkeys', [{ id: 'cred-1', publicKey: 'AAAA', counter: 0, transports: [] }]);
   let r = await (await post('/api/agent', { text: 'Envoie 30 euros à Amine', draft: {} })).json();
   r = await (await post('/api/agent', { text: 'oui', draft: r.draft })).json();
   assert.equal(r.reply.params.method, 'passkey');
@@ -189,5 +209,5 @@ test('a payment prepared by voice on a device with a passkey needs the fingerpri
   // The keyboard path (classic mode) is not affected: PayPal's approval page authorises it.
   const prep = await (await post('/api/send/prepare', { contactId: 'amine', amount: '31', currency: 'EUR' })).json();
   assert.equal((await post('/api/send/confirm', { prepareId: prep.prepareId })).status, 200);
-  await store.kvSet('passkeys', []);
+  await store.forUser(account.id).kvSet('passkeys', []);
 });

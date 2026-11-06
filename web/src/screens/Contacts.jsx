@@ -1,8 +1,10 @@
 import { useKapyini } from '../context.js';
 import { Avatar, Page } from '../components/ui.jsx';
+import { VOICE } from '../lib/voice-strings.js';
 
 export default function Contacts() {
-  const { t, config, setFlow, go } = useKapyini();
+  const { t, lang, config, setFlow, go } = useKapyini();
+  const p = VOICE[lang].people;
   return (
     <Page title={t.contactsTitle} back={{ href: '#home', label: t.back }}>
       <ul className="grid gap-3">
@@ -19,6 +21,8 @@ export default function Contacts() {
           </li>
         ))}
       </ul>
+      {config.contacts.length === 0 && <p className="text-xl text-slate">{p.empty}</p>}
+      <p className="mt-6"><a href="#people" className="inline-flex min-h-12 items-center font-bold text-blue">{VOICE[lang].space.contactsLink} ›</a></p>
     </Page>
   );
 }

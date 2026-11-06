@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 — 2026-11-06
+
+- **One space per user.** Each user has their own contacts, history, fingerprints and settings. A space is created on first launch (no e-mail, no password) and kept by a session cookie; the fingerprint signs the user back in, on any device ("I already have a space").
+- **Passkeys per user**, one per device. A voice payment needs a signature from one of *that* user's passkeys.
+- **My contacts**: a new space starts with a copy of the demo contacts; the user adds, edits or removes contacts (name, nicknames, Sandbox address) without touching anyone else's. Saying "ouvre mes contacts" opens the page.
+- **Payer address per user** in Settings, for payment requests (default: `PAYPAL_PAYER_EMAIL`).
+- The journal keeps the recipient's name at the time of payment, so renaming or removing a contact does not rewrite it.
+- Added `.env.example` and `data/contacts.example.json`, which the README asked to copy but were missing.
+- 44 automated tests.
+
+**Upgrading:** fingerprints registered with 1.1 belonged to the shared demo user and are no longer used. Turn the fingerprint on again from the welcome screen or Settings.
+
 ## 1.1.0 — 2026-11-05
 
 - **New name: KAPYIŊI** ("tree" in Senoufo), for the project and its agent. New tree mark in the logo.

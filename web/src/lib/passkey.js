@@ -23,6 +23,20 @@ export async function registerPasskey() {
   }
 }
 
+/** Sign in with the finger: the passkey says which space it opens. Returns { ok, account } or { ok: false, error }. */
+export async function loginWithPasskey() {
+  const start = await api('/api/account/login/options', { body: {} });
+  if (!start.ok) return { ok: false, error: 'NETWORK' };
+  let response;
+  try {
+    response = await startAuthentication({ optionsJSON: start.options });
+  } catch (e) {
+    return { ok: false, error: e?.name === 'NotAllowedError' ? 'PASSKEY_CANCELLED' : 'PASSKEY_REFUSED' };
+  }
+  const r = await api('/api/account/login/verify', { body: { flowId: start.flowId, response } });
+  return r.ok ? { ok: true, account: r.account } : { ok: false, error: r.errors?.[0] || 'PASSKEY_UNKNOWN' };
+}
+
 /** Ask the sensor to sign THIS payment. Returns the signed response, or { error }. */
 export async function signPayment(prepareId) {
   const options = await api('/api/passkey/confirm/options', { body: { prepareId } });

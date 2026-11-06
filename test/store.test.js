@@ -11,6 +11,7 @@ function fakeUpstash() {
     switch (cmd) {
       case 'SET': db.set(a[0], a[1]); return ok('OK');
       case 'GET': return ok(db.get(a[0]) ?? null);
+      case 'DEL': db.delete(a[0]); return ok(1);
       case 'GETDEL': { const v = db.get(a[0]) ?? null; db.delete(a[0]); return ok(v); }
       case 'LPUSH': db.set(a[0], [a[1], ...(db.get(a[0]) || [])]); return ok(1);
       case 'LTRIM': return ok('OK');
@@ -46,5 +47,25 @@ for (const [name, kind, make] of [
     assert.equal((await s.list()).length, 1);
     await s.kvSet('passkeys', [{ id: 'k' }]);
     assert.deepEqual(await s.kvGet('passkeys'), [{ id: 'k' }]);
+    await s.kvDel('passkeys');
+    assert.equal(await s.kvGet('passkeys'), null);
+  });
+
+  test(`${name} store: one user never sees another user's space`, async () => {
+    const s = make();
+    const awa = s.forUser('awa');
+    const moussa = s.forUser('moussa');
+    const id = await awa.prepare({ amount: '10.00' });
+    assert.equal(await moussa.peekPrepared(id), null);
+    assert.equal(await moussa.takePrepared(id), null);
+    assert.equal((await awa.takePrepared(id)).amount, '10.00');
+    const op = await awa.createOperation({ kind: 'send' });
+    assert.equal(await moussa.get(op.id), null);
+    assert.equal(await moussa.update(op.id, { state: 'x' }), null);
+    assert.equal((await awa.list()).length, 1);
+    assert.equal((await moussa.list()).length, 0);
+    await awa.kvSet('contacts', ['a']);
+    assert.equal(await moussa.kvGet('contacts'), null);
+    assert.deepEqual(await awa.kvGet('contacts'), ['a']);
   });
 }

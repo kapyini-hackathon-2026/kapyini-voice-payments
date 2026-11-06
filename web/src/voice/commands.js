@@ -17,6 +17,7 @@ const PAGES = [
   ['#activity', /\b(operations?|historique|history|transactions?|mes paiements|my payments|activite|activity)\b/],
   ['#invoices', /\b(factures?|demandes? de paiement|invoices?|bills?|payment requests?)\b/],
   ['#settings', /\b(reglages?|parametres?|settings|preferences|options)\b/],
+  ['#people', /\b(contacts?|carnet d adresses|address book)\b/],
   ['#send', /\b(clavier|keyboard|envoi manuel|sans la voix)\b/],
 ];
 const LANG_VERB = /(parle|parlez|parler|passe|passez|passer|mets|mettez|mettre|change|changez|changer|bascule|switch|speak|langue|language)/;

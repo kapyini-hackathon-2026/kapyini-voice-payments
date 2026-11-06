@@ -1,12 +1,15 @@
 // First launch, led by voice (team design, screens 1–2):
 //   touch to start → "Shall I speak every time?" (yes = voice mode, no = classic mode, silent)
 //   → "What should I call you?" → turn on the fingerprint (a real passkey, not a voiceprint).
+// Choosing a mode creates the user's own space (contacts, history, fingerprints). Someone who
+// already has one signs in with the finger instead ("I already have a space").
 // Browsers only let a page speak after a touch, hence the first "touch to start".
 import { useEffect, useRef, useState } from 'react';
 import { useKapyini } from '../context.js';
 import { VOICE } from '../lib/voice-strings.js';
 import { canListen, earcon, listenOnce, speak } from '../voice/speech.js';
-import { passkeyAvailable, registerPasskey } from '../lib/passkey.js';
+import { passkeyAvailable, registerPasskey, loginWithPasskey } from '../lib/passkey.js';
+import { api } from '../lib/format.js';
 import { VoiceHeader, VoiceOrb } from '../components/voice-ui.jsx';
 
 const plain = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
@@ -18,14 +21,20 @@ const cleanName = (s) => {
 };
 
 export default function Welcome() {
-  const { lang, setLang, rate, output, setOutput, say, setMode, setUserName, setFlow, config, setConfig } = useKapyini();
+  const { lang, setLang, rate, output, setOutput, say, mode, setMode, setFlow, config, refreshConfig } = useKapyini();
   const v = VOICE[lang].onboard;
+  const sp = VOICE[lang].space;
   const [step, setStep] = useState('start'); // start | mode | name | passkey
   const [line, setLine] = useState('');
   const [heard, setHeard] = useState('');
   const [orb, setOrb] = useState('idle');
   const [busy, setBusy] = useState(false);
+  const [canPasskey, setCanPasskey] = useState(false);
   const alive = useRef(true);
+  // The space being set up. The rest of the app sees it only at the end (finish), so the
+  // welcome is not cut short.
+  const space = useRef(config.account);
+  useEffect(() => { passkeyAvailable().then(setCanPasskey); }, []);
   const h1 = useRef();
   useEffect(() => { document.title = 'Kapyiŋi'; h1.current?.focus(); return () => { alive.current = false; }; }, []);
   useEffect(() => { h1.current?.focus(); }, [step]);
@@ -49,6 +58,28 @@ export default function Welcome() {
     return text;
   }
 
+  async function ensureSpace() {
+    if (space.current) return true;
+    const r = await api('/api/account', { body: {} });
+    if (!r.ok) { await talk(sp.createFailed); return false; }
+    space.current = r.account;
+    return true;
+  }
+
+  async function login() {
+    if (busy) return;
+    setBusy(true);
+    setOrb('passkey');
+    const r = await loginWithPasskey();
+    setBusy(false);
+    if (!r.ok) { setOrb('idle'); await talk(r.error === 'PASSKEY_CANCELLED' ? sp.loginCancelled : sp.loginFailed); return; }
+    space.current = r.account;
+    setOrb('done');
+    await talk(sp.loginDone(r.account.name));
+    // The mode is a choice of this device: ask it if it was never made here.
+    if (mode) { alive.current = false; await refreshConfig(); window.location.hash = '#home'; } else start();
+  }
+
   async function start() {
     setStep('mode');
     await talk(v.askMode);
@@ -61,23 +92,33 @@ export default function Welcome() {
   }
 
   async function chooseClassic() {
+    if (!(await ensureSpace())) return;
     alive.current = false;
     await talk(v.classicChosen);
+    await refreshConfig();
     setMode('classic');
     window.location.hash = '#home';
   }
 
   async function chooseVoice() {
+    if (!(await ensureSpace())) return;
+    // Back in an existing space: the name and the fingerprint are already there.
+    if (space.current.name) return askPasskey(space.current.name);
     setStep('name');
     setHeard('');
     await talk(v.askName);
     const a = await hear();
     const name = cleanName(a);
-    if (name) { setUserName(name); await talk(v.nameSaved(name)); }
+    if (name) {
+      const r = await api('/api/account', { method: 'PATCH', body: { name } });
+      if (r.ok) space.current = r.account;
+      await talk(v.nameSaved(name));
+    }
     askPasskey(name);
   }
 
   async function askPasskey(name) {
+    if (space.current?.passkeys > 0) return finish(name);
     setStep('passkey');
     setHeard('');
     if (!(await passkeyAvailable())) { await talk(v.passkeyNone); return finish(name); }
@@ -90,13 +131,14 @@ export default function Welcome() {
     setOrb('passkey');
     const r = await registerPasskey();
     setBusy(false);
-    if (r.ok) { setConfig({ ...config, passkeyRegistered: true }); setOrb('done'); await talk(v.passkeyDone); }
+    if (r.ok) { setOrb('done'); await talk(v.passkeyDone); }
     else { setOrb('idle'); await talk(v.passkeyFailed); }
     finish();
   }
 
-  function finish() {
+  async function finish() {
     alive.current = false;
+    await refreshConfig();
     setFlow((f) => ({ ...f, justOnboarded: true }));
     setMode('voice');
     window.location.hash = '#home';
@@ -124,8 +166,13 @@ export default function Welcome() {
             <p className="mt-2 text-lg text-slate">{v.startHint}</p>
             <div className="mt-10 flex flex-wrap justify-center gap-3">
               <button type="button" className="min-h-12 rounded-full border border-line px-5 font-bold" onClick={() => { setOutput('screenreader'); start(); }}>{v.srLink}</button>
+              {canPasskey && (
+                <button type="button" disabled={busy} className="min-h-12 rounded-full border border-line px-5 font-bold" onClick={login} aria-describedby="login-hint">{sp.login}</button>
+              )}
               <button type="button" className="min-h-12 rounded-full border border-line px-5 font-bold" lang={lang === 'fr' ? 'en' : 'fr'} onClick={() => setLang(lang === 'fr' ? 'en' : 'fr')}>{lang === 'fr' ? 'English' : 'Français'}</button>
             </div>
+            {canPasskey && <p id="login-hint" className="mt-3 text-slate">{sp.loginHint}</p>}
+            {line && <p className="mt-6 max-w-xl text-xl font-bold" aria-hidden="true">{line}</p>}
           </>
         ) : (
           <>

@@ -18,9 +18,10 @@ import Activity from './screens/Activity.jsx';
 import Status from './screens/Status.jsx';
 import Invoices from './screens/Invoices.jsx';
 import Settings from './screens/Settings.jsx';
+import People from './screens/People.jsx';
 
-const SCREENS = { home: Agent, agent: Agent, send: Contacts, amount: Amount, confirm: Confirm, opening: Opening, result: Result, activity: Activity, status: Status, invoices: Invoices, settings: Settings };
-const FALLBACK_CONFIG = { sandboxReady: false, contacts: [], currencies: ['EUR'], defaultCurrency: 'EUR', limit: '0', ai: null, invoicesReady: false };
+const SCREENS = { home: Agent, agent: Agent, send: Contacts, amount: Amount, confirm: Confirm, opening: Opening, result: Result, activity: Activity, status: Status, invoices: Invoices, settings: Settings, people: People };
+const FALLBACK_CONFIG = { sandboxReady: false, account: null, contacts: [], currencies: ['EUR'], defaultCurrency: 'EUR', limit: '0', ai: null, invoicesReady: false };
 
 function initialLang() {
   const saved = read('kapyini-lang');
@@ -46,7 +47,6 @@ export default function App() {
   // Chosen by the user on the first launch, remembered, and changeable at any time.
   const [mode, setModeState] = useState(() => read('kapyini-mode') || (read('kapyini-output') ? 'voice' : null));
   const [output, setOutputState] = useState(() => read('kapyini-output', 'voice')); // who speaks in voice mode
-  const [userName, setUserNameState] = useState(() => read('kapyini-name', ''));
   const [rate, setRateState] = useState(() => read('kapyini-rate', 'normal'));
   const [config, setConfig] = useState(null);
   const [flow, setFlow] = useState({});
@@ -56,7 +56,13 @@ export default function App() {
   const prefs = useRef({ output, lang, rate, mode });
   prefs.current = { output, lang, rate, mode };
 
-  useEffect(() => { api('/api/config').then((cfg) => setConfig(cfg.ok ? cfg : FALLBACK_CONFIG)); }, []);
+  // The configuration also carries the user's space: their contacts, name and fingerprints.
+  const refreshConfig = useCallback(async () => {
+    const cfg = await api('/api/config');
+    setConfig((old) => (cfg.ok ? cfg : old || FALLBACK_CONFIG));
+    return cfg;
+  }, []);
+  useEffect(() => { refreshConfig(); }, [refreshConfig]);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   // Leaving a screen silences Kapyiŋi, so it never talks over the next screen.
   useEffect(() => stopSpeaking, [name]);
@@ -81,7 +87,13 @@ export default function App() {
   const setOutput = (o) => { setOutputState(o); write('kapyini-output', o); };
   const setRate = (r) => { setRateState(r); write('kapyini-rate', r); };
   const setMode = (m) => { setModeState(m); write('kapyini-mode', m); };
-  const setUserName = (n) => { setUserNameState(n); write('kapyini-name', n); };
+  // The first name belongs to the space (it follows the user to another device), not to this browser.
+  const userName = config?.account?.name || '';
+  const setUserName = useCallback(async (n) => {
+    const r = await api('/api/account', { method: 'PATCH', body: { name: n } });
+    if (r.ok) setConfig((cfg) => ({ ...cfg, account: r.account }));
+    return r;
+  }, []);
 
   // The one way Kapyiŋi says something. The live region always gets the text (screen readers
   // read it); Kapyiŋi's own voice speaks only for people who said they have no screen reader.
@@ -142,13 +154,14 @@ export default function App() {
 
   const ctx = useMemo(() => ({
     lang, setLang, t, c, output, setOutput, rate, setRate, mode, setMode, userName, setUserName,
-    config, setConfig, flow, setFlow, say, go, confirmPayment, handOver,
-  }), [lang, t, c, output, rate, mode, userName, config, flow, say, confirmPayment, handOver]);
+    config, setConfig, refreshConfig, flow, setFlow, say, go, confirmPayment, handOver,
+  }), [lang, t, c, output, rate, mode, userName, setUserName, config, refreshConfig, flow, say, confirmPayment, handOver]);
 
   if (!config) return null;
   // The agent opens only in voice mode; classic mode stays on the classic screens.
+  // Without a space on this device (first launch, or after leaving it), the welcome comes first.
   let Screen = SCREENS[name] || Agent;
-  if (!mode) Screen = Welcome;
+  if (!mode || !config.account) Screen = Welcome;
   else if (mode === 'classic' && (name === 'home' || name === 'agent' || !SCREENS[name])) Screen = ClassicHome;
 
   return (

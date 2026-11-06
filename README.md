@@ -12,7 +12,16 @@ On first launch Kapyiŋi asks aloud: *"Shall I speak every time you open the app
 - **Yes → voice mode.** Kapyiŋi's night-blue stage opens, asks your first name, and turns on the device's **fingerprint / Face ID** (a passkey). On later visits, one touch and Kapyiŋi greets you by name. Keys on a computer: Space to talk, Esc to stop, R to repeat.
 - **No → classic mode.** The usual screens (send, payment requests, activity) and Kapyiŋi stays silent.
 
-The choice is remembered, and a "Voice mode / Classic mode" button on every screen changes it in one touch. Voice mode is for anyone who prefers to talk. Kapyiŋi never guesses who is blind.
+## Your own space
+
+Every user has their own Kapyiŋi space: their own **contacts**, **history**, **fingerprints** and **settings** (first name, PayPal Sandbox address). Nobody else sees them.
+
+- **No e-mail, no password.** Choosing a mode on first launch creates the space on that device. Turning on the fingerprint lets the user come back to it later, on this device or another one: "I already have a space: use my fingerprint". One fingerprint per device, as many devices as needed.
+- **Demo contacts to start.** A new space receives a copy of the demo contacts (Sandbox accounts set up by the team, from `data/contacts.json` or `CONTACTS_JSON`), so it can be tried at once. After that the copy is the user's own: Settings → *Manage my contacts* adds, edits or removes people without touching anyone else's list. Every address must be a PayPal Sandbox account.
+- **Payment requests** are looked for at the PayPal Sandbox address set in the user's settings (by default `PAYPAL_PAYER_EMAIL`).
+- **Leaving** the space on a device closes its session there. Without a fingerprint, a space cannot be opened again.
+
+The choice of mode is remembered, and a "Voice mode / Classic mode" button on every screen changes it in one touch. Voice mode is for anyone who prefers to talk. Kapyiŋi never guesses who is blind.
 
 ## The three locks
 
@@ -69,7 +78,7 @@ If a capture comes back as **pending**, the recipient does not hold that currenc
 3. Environment variables: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_PAYER_EMAIL`, `APP_URL` (the production address, e.g. `https://kapyini-xxx.vercel.app`, used for PayPal's return and for passkeys), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `CONTACTS_JSON`, optional `ANTHROPIC_API_KEY`.
 4. Passkeys only work on the address in `APP_URL` (and `EXTRA_ORIGINS`). Preview URLs will not accept the fingerprint registered on production.
 
-Prototype limits: one demo user per deployment (no Kapyiŋi accounts yet), so everyone who opens the public link shares the same contacts, journal and passkeys.
+Each visitor of the public link gets their own space (contacts, journal, passkeys). They all use the same PayPal app (your Client ID), and pay with a Personal Sandbox account on PayPal's page.
 
 For interface work, run `npm run dev` and `npm run dev:web` side by side. The microphone only works on `localhost` or HTTPS.
 
@@ -79,7 +88,7 @@ For interface work, run `npm run dev` and `npm run dev:web` side by side. The mi
 npm test
 ```
 
-32 tests cover:
+44 tests cover:
 
 - the safety rules;
 - amounts spoken in words in French and English ("quatre-vingt-dix", "douze euros cinquante");
@@ -88,6 +97,7 @@ npm test
 - a compromised AI that tries to send 9,999 €;
 - the bill journey;
 - the fingerprint: a voice payment is refused without a valid signature, the keyboard path is not affected;
+- the spaces: no access without a session, each space starts with its own copy of the demo contacts, contacts are checked and can be changed without touching another space, one user can neither see nor confirm another user's payments, passkeys and the payer address belong to one space, an unknown passkey opens nothing;
 - both storage back-ends (memory and Redis);
 - the honest answers;
 - the send flow and the invoice flow against a **fake** PayPal server (idempotency, forged return, decline, cancel, a bill cannot be paid twice).
@@ -107,6 +117,7 @@ phone browser (web/, React + Tailwind)  →  Kapyiŋi server (src/)  →  PayPal
 - `src/spoken.js`: amounts said in digits or words → cents. This is what compares the amount said back.
 - `src/interpret.js`: sentence → `{ action, contact_name, amount, currency }` with Claude (JSON schema) or with rules; also the conversation words (repeat, cancel, yes, no).
 - `src/contacts.js`: name or nickname → contact (accents, one typo).
+- `src/accounts.js`: spaces, sessions (an HttpOnly cookie; only a hash of the token is stored), each user's contacts and settings. `src/passkey.js`: each space's passkeys, signing in with the finger, confirming one payment.
 - `src/rules.js`, `src/store.js`, `src/paypal.js`, `src/app.js`: checks, journal, PayPal client (Orders v2, Invoicing v2), routes.
 - `web/`: React + Vite + Tailwind CSS v4. Atkinson Hyperlegible typeface, light and dark modes, French and English.
 

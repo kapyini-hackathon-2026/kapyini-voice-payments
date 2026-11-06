@@ -1,5 +1,6 @@
-// Where Kapyiŋi keeps its short-lived state: prepared requests (5 min), the journal of
-// operations, and the passkeys registered for the demo user.
+// Where Kapyiŋi keeps its state: prepared requests (5 min), the journal of operations, and a
+// small key-value space (accounts, sessions, each user's contacts and passkeys).
+// `store.forUser(id)` gives the same interface limited to one user's space.
 //
 // Two back-ends, same async interface:
 //   - memory (+ a JSON file): for `npm start` on one machine.
@@ -13,9 +14,37 @@ import { randomUUID } from 'node:crypto';
 export const PREPARED_TTL_MS = 5 * 60 * 1000;
 
 export function createStore({ file, redis, redisUrl, redisClient, fetchImpl = fetch } = {}) {
-  if (redis?.url && redis?.token) return redisStore({ cmd: restCommand({ ...redis, fetchImpl }) });
-  if (redisUrl || redisClient) return redisStore({ cmd: tcpCommand({ url: redisUrl, client: redisClient }) });
-  return memoryStore({ file });
+  let base;
+  if (redis?.url && redis?.token) base = redisStore({ cmd: restCommand({ ...redis, fetchImpl }) });
+  else if (redisUrl || redisClient) base = redisStore({ cmd: tcpCommand({ url: redisUrl, client: redisClient }) });
+  else base = memoryStore({ file });
+  base.forUser = (userId) => scoped(base, userId);
+  return base;
+}
+
+// One user's space: their prepared requests, their journal, their keys. Anything that belongs
+// to another user is simply not found.
+function scoped(base, userId) {
+  if (!userId) throw new Error('forUser needs a user id');
+  const mine = (x) => (x && x.userId === userId ? x : null);
+  const key = (k) => `u:${userId}:${k}`;
+  return {
+    kind: base.kind,
+    userId,
+    prepare: (request) => base.prepare({ ...request, userId }),
+    peekPrepared: async (id) => mine(await base.peekPrepared(id)),
+    async markPrepared(id, fields) {
+      if (mine(await base.peekPrepared(id))) await base.markPrepared(id, fields);
+    },
+    takePrepared: async (id) => (mine(await base.peekPrepared(id)) ? base.takePrepared(id) : null),
+    createOperation: (fields) => base.createOperation({ ...fields, userId }),
+    update: async (id, fields) => (mine(await base.get(id)) ? base.update(id, fields) : null),
+    get: async (id) => mine(await base.get(id)),
+    list: () => base.list(userId),
+    kvGet: (k) => base.kvGet(key(k)),
+    kvSet: (k, v) => base.kvSet(key(k), v),
+    kvDel: (k) => base.kvDel(key(k)),
+  };
 }
 
 // Upstash REST: each command is one HTTPS request.
@@ -107,14 +136,19 @@ function memoryStore({ file } = {}) {
     async get(id) {
       return operations.get(id) ?? null;
     },
-    async list() {
-      return [...operations.values()].sort((a, b) => b.createdAt - a.createdAt);
+    // With a user id: that user's operations only.
+    async list(userId) {
+      return [...operations.values()].filter((op) => !userId || op.userId === userId).sort((a, b) => b.createdAt - a.createdAt);
     },
     async kvGet(key) {
       return kv.has(key) ? structuredClone(kv.get(key)) : null;
     },
     async kvSet(key, value) {
       kv.set(key, value);
+      persist();
+    },
+    async kvDel(key) {
+      kv.delete(key);
       persist();
     },
   };
@@ -148,8 +182,9 @@ function redisStore({ cmd, prefix = 'kapyini:' }) {
     async createOperation(fields) {
       const op = { id: randomUUID(), createdAt: Date.now(), updatedAt: Date.now(), ...fields };
       await cmd('SET', `${prefix}op:${op.id}`, JSON.stringify(op));
-      await cmd('LPUSH', `${prefix}ops`, op.id);
-      await cmd('LTRIM', `${prefix}ops`, 0, 199);
+      const list = op.userId ? `${prefix}ops:${op.userId}` : `${prefix}ops`;
+      await cmd('LPUSH', list, op.id);
+      await cmd('LTRIM', list, 0, 199);
       return op;
     },
     async update(id, fields) {
@@ -162,8 +197,8 @@ function redisStore({ cmd, prefix = 'kapyini:' }) {
     async get(id) {
       return getJson(`op:${id}`);
     },
-    async list() {
-      const ids = await cmd('LRANGE', `${prefix}ops`, 0, 49);
+    async list(userId) {
+      const ids = await cmd('LRANGE', userId ? `${prefix}ops:${userId}` : `${prefix}ops`, 0, 49);
       if (!ids?.length) return [];
       const rows = await cmd('MGET', ...ids.map((i) => `${prefix}op:${i}`));
       return rows.filter(Boolean).map((r) => JSON.parse(r));
@@ -173,6 +208,9 @@ function redisStore({ cmd, prefix = 'kapyini:' }) {
     },
     async kvSet(key, value) {
       await cmd('SET', `${prefix}kv:${key}`, JSON.stringify(value));
+    },
+    async kvDel(key) {
+      await cmd('DEL', `${prefix}kv:${key}`);
     },
   };
 }

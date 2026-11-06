@@ -32,7 +32,7 @@ export function buildServer(env = process.env) {
     helpUrl: env.HELP_URL || 'https://www.paypal.com/us/cshelp/contact-us',
   };
 
-  // Contacts: CONTACTS_JSON (for Vercel, where data/contacts.json is not deployed), else the files.
+  // Demo contacts, copied into each new space: CONTACTS_JSON (for Vercel, where data/contacts.json is not deployed), else the files.
   let contacts;
   let contactsFrom;
   if (env.CONTACTS_JSON) {
@@ -62,7 +62,7 @@ export function buildServer(env = process.env) {
   const app = createApp({ config, contacts, store, paypal, interpret, aiName: env.ANTHROPIC_API_KEY ? aiModel : null, serveStatic: !env.VERCEL });
 
   const notes = [
-    `Contacts loaded from ${contactsFrom}`,
+    `Demo contacts (copied into each new space) loaded from ${contactsFrom}`,
     env.ANTHROPIC_API_KEY ? `Understanding sentences with ${aiModel}` : 'No ANTHROPIC_API_KEY: sentences are understood with built-in rules',
     paypal ? 'PayPal Sandbox configured' : 'PayPal Sandbox not configured: set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET',
     `Storage: ${store.kind}${env.VERCEL && store.kind === 'memory' ? ' (WARNING: on Vercel, connect a Redis database (REDIS_URL), or confirmations will expire)' : ''}`,
