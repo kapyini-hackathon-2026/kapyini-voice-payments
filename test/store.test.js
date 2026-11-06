@@ -21,10 +21,20 @@ function fakeUpstash() {
   };
 }
 
-for (const [name, make] of [['memory', () => createStore()], ['redis', () => createStore({ redis: { url: 'https://x', token: 't' }, fetchImpl: fakeUpstash() })]]) {
+// The same fake, seen as a classic Redis client (sendCommand), for REDIS_URL.
+function fakeTcpClient() {
+  const rest = fakeUpstash();
+  return { sendCommand: async (args) => (await (await rest('', { body: JSON.stringify(args) })).json()).result };
+}
+
+for (const [name, kind, make] of [
+  ['memory', 'memory', () => createStore()],
+  ['redis REST (Upstash)', 'redis', () => createStore({ redis: { url: 'https://x', token: 't' }, fetchImpl: fakeUpstash() })],
+  ['redis TCP (REDIS_URL)', 'redis', () => createStore({ redisClient: fakeTcpClient() })],
+]) {
   test(`${name} store: prepared requests are single use; journal and key-value work`, async () => {
     const s = make();
-    assert.equal(s.kind, name);
+    assert.equal(s.kind, kind);
     const id = await s.prepare({ contactId: 'a', amount: '10.00' });
     await s.markPrepared(id, { challenge: 'c1' });
     assert.equal((await s.peekPrepared(id)).challenge, 'c1');

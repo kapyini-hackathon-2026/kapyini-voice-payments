@@ -3,16 +3,52 @@
 //
 // Two back-ends, same async interface:
 //   - memory (+ a JSON file): for `npm start` on one machine.
-//   - Upstash Redis over REST: for Vercel, where every request may run in a different
-//     short-lived function and memory is not shared. Set UPSTASH_REDIS_REST_URL and _TOKEN.
+//   - Redis, for Vercel, where every request may run in a different short-lived function and
+//     memory is not shared. Either a classic Redis address (REDIS_URL, e.g. the "Redis" integration
+//     of Vercel's Storage tab) or Upstash over REST (UPSTASH_REDIS_REST_URL and _TOKEN).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export const PREPARED_TTL_MS = 5 * 60 * 1000;
 
-export function createStore({ file, redis, fetchImpl = fetch } = {}) {
-  return redis?.url && redis?.token ? redisStore({ ...redis, fetchImpl }) : memoryStore({ file });
+export function createStore({ file, redis, redisUrl, redisClient, fetchImpl = fetch } = {}) {
+  if (redis?.url && redis?.token) return redisStore({ cmd: restCommand({ ...redis, fetchImpl }) });
+  if (redisUrl || redisClient) return redisStore({ cmd: tcpCommand({ url: redisUrl, client: redisClient }) });
+  return memoryStore({ file });
+}
+
+// Upstash REST: each command is one HTTPS request.
+function restCommand({ url, token, fetchImpl }) {
+  return async (...args) => {
+    const res = await fetchImpl(url.replace(/\/$/, ''), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(`Redis error: ${data.error || res.status}`);
+    return data.result;
+  };
+}
+
+// Classic Redis (redis:// or rediss://): one connection, opened on first use and reused
+// while the function stays warm.
+function tcpCommand({ url, client }) {
+  let ready;
+  const connect = async () => {
+    if (client) return client;
+    const { createClient } = await import('redis');
+    const c = createClient({ url, socket: { connectTimeout: 5000 } });
+    c.on('error', (err) => console.error('Redis connection error:', err.message));
+    await c.connect();
+    return c;
+  };
+  return async (...args) => {
+    ready ||= connect().catch((err) => { ready = null; throw err; });
+    const c = await ready;
+    return c.sendCommand(args.map(String));
+  };
 }
 
 function memoryStore({ file } = {}) {
@@ -84,17 +120,7 @@ function memoryStore({ file } = {}) {
   };
 }
 
-function redisStore({ url, token, prefix = 'kapyini:', fetchImpl }) {
-  async function cmd(...args) {
-    const res = await fetchImpl(url.replace(/\/$/, ''), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args),
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(`Redis error: ${data.error || res.status}`);
-    return data.result;
-  }
+function redisStore({ cmd, prefix = 'kapyini:' }) {
   const getJson = async (key) => {
     const v = await cmd('GET', prefix + key);
     return v ? JSON.parse(v) : null;

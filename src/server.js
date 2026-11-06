@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { createPayPalClient } from './paypal.js';
 import { createStore } from './store.js';
 import { createInterpreter } from './interpret.js';
+// Imported (not read from disk) so that Vercel's bundler always ships it with the function.
 import exampleContacts from '../data/contacts.example.json' with { type: 'json' };
 
 const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
@@ -54,7 +55,7 @@ export function buildServer(env = process.env) {
   const redisUrl = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
   const redisToken = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
   const redis = redisUrl && redisToken ? { url: redisUrl, token: redisToken } : null;
-  const store = createStore({ redis, file: env.VERCEL ? null : root('data/operations.json') });
+  const store = createStore({ redis, redisUrl: env.REDIS_URL || env.KV_URL, file: env.VERCEL ? null : root('data/operations.json') });
 
   const aiModel = env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
   const interpret = createInterpreter({ apiKey: env.ANTHROPIC_API_KEY, model: aiModel });
@@ -64,7 +65,7 @@ export function buildServer(env = process.env) {
     `Contacts loaded from ${contactsFrom}`,
     env.ANTHROPIC_API_KEY ? `Understanding sentences with ${aiModel}` : 'No ANTHROPIC_API_KEY: sentences are understood with built-in rules',
     paypal ? 'PayPal Sandbox configured' : 'PayPal Sandbox not configured: set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET',
-    `Storage: ${store.kind}${env.VERCEL && store.kind === 'memory' ? ' (WARNING: on Vercel, set UPSTASH_REDIS_REST_URL and _TOKEN, or confirmations will expire)' : ''}`,
+    `Storage: ${store.kind}${env.VERCEL && store.kind === 'memory' ? ' (WARNING: on Vercel, connect a Redis database (REDIS_URL), or confirmations will expire)' : ''}`,
   ];
   return { app, config, notes };
 }

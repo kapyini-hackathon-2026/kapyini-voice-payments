@@ -1,7 +1,7 @@
 {
   "name": "kapyini-voice-payments",
   "version": "1.1.0",
-  "description": "KAPYIŊI — a voice-first, accessible assistant for PayPal payments (PayPal Sandbox, PayPal AI Hackathon 2026).",
+  "description": "Sésame — a voice-first, accessible assistant for PayPal payments (PayPal Sandbox, PayPal AI Hackathon 2026).",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -24,8 +24,9 @@
     "express": "^4.21.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "redis": "^4.7.1",
     "tailwindcss": "^4.3.4",
     "vite": "^8.3.5"
   },
-  "author": "Wahon Jean-Baptiste Ouattara and the Kapyiŋi team"
+  "author": "Wahon Jean-Baptiste Ouattara and the Sésame team"
 }
