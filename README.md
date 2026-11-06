@@ -44,6 +44,7 @@ A bare "oui", "ok" or "je confirme" never sends money. A different amount said a
 | "Envoie cent euros à mon frère" | Finds the contact by nickname, reads back, takes spoken corrections ("non, trente", "l'autre Amine"), asks for the amount said back, opens PayPal approval, captures, announces the verified result | Orders v2: create with `payee`, capture, show |
 | "Je veux payer ma facture" | Reads the bill aloud (merchant, amount, due date), asks for the amount said back, opens the bill on PayPal, checks when you come back that it is paid | Invoicing v2: search, show (`recipient_view_url`), status |
 | "Qu'est-ce qui s'est passé avec mon dernier paiement ?" / "mes opérations" | Refreshes the status from PayPal and says it | Orders v2 / Invoicing v2: show |
+| "Ajoute un contact", "change l'adresse de mon frère", "supprime Eddie", "quels sont mes contacts ?" | Asks the name, the nickname, then the Sandbox address (said with "arobase" and "point", or typed), reads everything back, saves only after "oui" (and the fingerprint when the space has one) | none |
 | "Combien ai-je sur mon compte ?" | Says honestly that PayPal does not share the balance with outside apps | none |
 | "Je veux parler à un conseiller" | Says it cannot reach PayPal staff; offers to call a trusted person or open PayPal help | none |
 | "Répète", "annule", "où en suis-je ?", "parle plus lentement", "parle en anglais" | Works at any step, decided without AI | none |
@@ -88,7 +89,7 @@ For interface work, run `npm run dev` and `npm run dev:web` side by side. The mi
 npm test
 ```
 
-44 tests cover:
+50 tests cover:
 
 - the safety rules;
 - amounts spoken in words in French and English ("quatre-vingt-dix", "douze euros cinquante");
@@ -97,6 +98,7 @@ npm test
 - a compromised AI that tries to send 9,999 €;
 - the bill journey;
 - the fingerprint: a voice payment is refused without a valid signature, the keyboard path is not affected;
+- contacts by voice: spoken addresses ("arobase", "point"), add / change / remove with a read-back, nothing saved before "oui", a fingerprint needed when the space has one, a contact change never usable as a payment;
 - the spaces: no access without a session, each space starts with its own copy of the demo contacts, contacts are checked and can be changed without touching another space, one user can neither see nor confirm another user's payments, passkeys and the payer address belong to one space, an unknown passkey opens nothing;
 - both storage back-ends (memory and Redis);
 - the honest answers;

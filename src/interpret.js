@@ -8,7 +8,7 @@
 // the deterministic code in agent.js and rules.js decides everything else.
 import { normalize } from './contacts.js';
 
-export const ACTIONS = ['send', 'invoices', 'activity', 'status', 'balance', 'human', 'help', 'cancel', 'unknown'];
+export const ACTIONS = ['send', 'invoices', 'activity', 'status', 'balance', 'human', 'help', 'cancel', 'contact_add', 'contact_edit', 'contact_remove', 'contacts_list', 'unknown'];
 
 const SCHEMA = {
   type: 'object',
@@ -25,8 +25,8 @@ const SCHEMA = {
 const SYSTEM = `You read one sentence that a user said to Kapyiŋi, a voice assistant that helps blind and low-literacy people use PayPal. The sentence comes from speech recognition, in French or English, and may contain recognition errors.
 
 Return the user's intent:
-- action: "send" (send money to someone), "invoices" (pay a payment request or an invoice I received, my bills), "activity" (list my recent payments), "status" (where is my last payment / did it arrive), "balance" (how much money do I have), "human" (talk to a person, an advisor, customer service), "help" (what can you do), "cancel" (stop, cancel, no), "unknown" (anything else).
-- contact_name: the recipient's name or nickname as heard ("mon frère", "maman" are valid). Use the known contacts only to correct obvious spelling from speech recognition; never pick a contact the user did not name.
+- action: "send" (send money to someone), "invoices" (pay a payment request or an invoice I received, my bills), "activity" (list my recent payments), "status" (where is my last payment / did it arrive), "balance" (how much money do I have), "human" (talk to a person, an advisor, customer service), "help" (what can you do), "cancel" (stop, cancel, no), "contact_add" (add someone to my contacts), "contact_edit" (change a contact's name, nickname or address), "contact_remove" (delete a contact), "contacts_list" (who are my contacts), "unknown" (anything else).
+- contact_name: the recipient's name or nickname as heard (for contact_* actions: the contact being added, changed or removed) ("mon frère", "maman" are valid). Use the known contacts only to correct obvious spelling from speech recognition; never pick a contact the user did not name.
 - amount: the amount as digits with a dot for decimals. Convert number words ("vingt-cinq" -> "25", "twelve fifty" -> "12.50"). Never invent or round an amount.
 - currency: ISO code only if a currency was said (euro -> EUR, dollar -> USD, dirham -> MAD). Never guess it.
 

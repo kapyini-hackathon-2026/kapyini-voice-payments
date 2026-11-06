@@ -174,6 +174,7 @@ const fr = {
     reviewYes: 'Oui, c’est ça', fixAmount: 'Changer le montant', fixPerson: 'Changer la personne', cancel: 'Annuler',
     sendAnyway: 'Envoyer quand même', changeAmount: 'Oui, changer le montant', keepAmount: 'Non, garder le montant',
     payInvoice: 'Oui, la payer', callTrusted: (name) => `Appeler ${name}`, openHelp: 'Aide PayPal',
+    noNickname: 'Pas de surnom', typeEmail: 'Écrire l’adresse', fixContact: 'Non, corriger', fieldName: 'Le nom', fieldAlias: 'Le surnom', fieldEmail: 'L’adresse',
   },
   agent: {
     ASK_CONTACT: () => 'À qui voulez-vous envoyer de l’argent ?',
@@ -371,6 +372,7 @@ const en = {
     reviewYes: 'Yes, that’s right', fixAmount: 'Change the amount', fixPerson: 'Change the person', cancel: 'Cancel',
     sendAnyway: 'Send anyway', changeAmount: 'Yes, change the amount', keepAmount: 'No, keep the amount',
     payInvoice: 'Yes, pay it', callTrusted: (name) => `Call ${name}`, openHelp: 'PayPal help',
+    noNickname: 'No nickname', typeEmail: 'Type the address', fixContact: 'No, correct it', fieldName: 'The name', fieldAlias: 'The nickname', fieldEmail: 'The address',
   },
   agent: {
     ASK_CONTACT: () => 'Who do you want to send money to?',

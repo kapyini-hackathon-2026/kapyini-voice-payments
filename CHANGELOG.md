@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 — 2026-11-06
+
+- **Contacts by voice.** "Ajoute un contact", "change l'adresse de mon frère", "renomme Eddie", "supprime Amine", "quels sont mes contacts ?". One question at a time (name, nickname, address), a read-back, and nothing saved before "oui". Addresses can be said ("fatou arobase personal point example point com") or typed.
+- In a space with a fingerprint, a contact change said by voice is saved only after the fingerprint: a contact decides where money goes.
+- **Fingerprint without the extra touch.** After "oui", the sensor opens by itself. If the browser needs a touch first (Safari), Kapyiŋi asks for one.
+- 50 automated tests.
+
 ## 1.2.0 — 2026-11-06
 
 - **One space per user.** Each user has their own contacts, history, fingerprints and settings. A space is created on first launch (no e-mail, no password) and kept by a session cookie; the fingerprint signs the user back in, on any device ("I already have a space").

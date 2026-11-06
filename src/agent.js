@@ -12,11 +12,15 @@ import { parseSpokenAmount } from './spoken.js';
 import {
   detectCommand, isYes, isNo, isSendAnyway, saysOther, wantsChangePerson, wantsChangeAmount, hasNegation, parseOrdinal,
 } from './interpret.js';
+import { createContactTalk, detectContactAction, readContactDraft, CONTACT_STAGES } from './contact-talk.js';
 
-const STAGES = ['collect', 'review', 'fix', 'confirm', 'mismatch', 'duplicate', 'invoice_pick', 'invoice_review', 'invoice_confirm', 'invoice_mismatch'];
+const STAGES = ['collect', 'review', 'fix', 'confirm', 'mismatch', 'duplicate', 'invoice_pick', 'invoice_review', 'invoice_confirm', 'invoice_mismatch', ...CONTACT_STAGES];
 const SETTINGS = { slower: ['rate', 'slower'], faster: ['rate', 'faster'], lang_en: ['lang', 'en'], lang_fr: ['lang', 'fr'], screenreader: ['output', 'screenreader'], voice: ['output', 'voice'] };
 
-export function createAgent({ contacts, config, store, interpret, publicContact, publicOperation, paypal = null, hasPasskey = async () => false }) {
+// `saveContact` applies a contact change of this user ({ op: 'add'|'edit'|'remove', id, name, aliases, email }).
+const NO_SAVE = async () => ({ ok: false, errors: ['DEFAULT'] });
+
+export function createAgent({ contacts, config, store, interpret, publicContact, publicOperation, paypal = null, hasPasskey = async () => false, saveContact = NO_SAVE }) {
   const knownContacts = contacts.map((c) => ({ name: c.name, nicknames: c.aliases || [] }));
   const choicesOfContacts = (list = contacts) => list.slice(0, 4).map((c, i) => ({ id: c.id, label: c.name, say: c.name, n: i + 1 }));
   const choicesOfCurrencies = () => config.currencies.map((c, i) => ({ label: c, say: c, currency: c, n: i + 1 }));
@@ -105,6 +109,9 @@ export function createAgent({ contacts, config, store, interpret, publicContact,
     }
     return null;
   }
+
+  // Adding, changing or removing contacts by voice.
+  const contactTalk = createContactTalk({ contacts, save: saveContact, prepare: (change) => store.prepare(change), hasPasskey, reply });
 
   async function prepareAndAsk(d) {
     const result = validateSend(
@@ -213,12 +220,13 @@ export function createAgent({ contacts, config, store, interpret, publicContact,
       invoiceId: typeof incoming.invoiceId === 'string' ? incoming.invoiceId : null,
       invoiceIds: Array.isArray(incoming.invoiceIds) ? incoming.invoiceIds.filter((x) => typeof x === 'string') : [],
       options: Array.isArray(incoming.options) ? incoming.options.filter((x) => typeof x === 'string').slice(0, 4) : [],
+      ct: readContactDraft(incoming.ct),
       choiceId,
     };
 
     // Words that work everywhere, decided without AI.
     const cmd = detectCommand(said);
-    if (cmd === 'cancel') return reply('CANCELLED');
+    if (cmd === 'cancel') return reply(CONTACT_STAGES.includes(incoming.stage) ? 'CT_CANCELLED' : 'CANCELLED');
     if (cmd === 'repeat') return reply('REPEAT', { draft: incoming });
     if (cmd === 'help') return reply('HELP', { draft: incoming });
     if (cmd in SETTINGS) return reply('SETTING', { draft: incoming, params: { key: SETTINGS[cmd][0], value: SETTINGS[cmd][1] } });
@@ -228,6 +236,7 @@ export function createAgent({ contacts, config, store, interpret, publicContact,
     }
 
     if (d.stage.startsWith('invoice_')) return handleInvoice(d, said, cmd);
+    if (CONTACT_STAGES.includes(d.stage)) return contactTalk.handle(d.stage, d.ct, said, { options: d.options, choiceId });
 
     // ----- 2nd lock: the amount must be said back. -----
     if (d.stage === 'confirm') {
@@ -295,6 +304,10 @@ export function createAgent({ contacts, config, store, interpret, publicContact,
       return { ...(await next(d)), reply: { code: 'REVIEW', params: { summary: summaryOf(d), again: true } } };
     }
 
+    // ----- "ajoute un contact", "supprime Amine", "quels sont mes contacts ?": decided without AI -----
+    const contactAction = detectContactAction(said);
+    if (contactAction) return contactTalk.start(contactAction, said);
+
     // ----- collecting: who, how much, which currency -----
     // "le deuxième", "numéro 1": a pick from the list Kapyiŋi just read out.
     const ordinal = parseOrdinal(said);
@@ -325,6 +338,10 @@ export function createAgent({ contacts, config, store, interpret, publicContact,
         const last = (await store.list())[0];
         return last ? reply('STATUS', { params: { operationId: last.id } }) : reply('NO_OPERATIONS');
       }
+      case 'contact_add': return contactTalk.start('add', said, intent.contact_name);
+      case 'contact_edit': return contactTalk.start('edit', said, intent.contact_name);
+      case 'contact_remove': return contactTalk.start('remove', said, intent.contact_name);
+      case 'contacts_list': return contactTalk.start('list', said);
       case 'send': break;
       default:
         if (!building && parseSpokenAmount(said) === null) return reply('NOT_UNDERSTOOD');

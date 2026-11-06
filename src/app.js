@@ -178,6 +178,35 @@ export function createApp({ config, contacts: demoContacts = [], store, paypal, 
     res.json({ ok: true });
   });
 
+  // A contact change said by voice: add, edit or remove, for this user only.
+  function saveContactFor(userId) {
+    return async ({ op, id, name, aliases, email }) => {
+      if (op === 'add') return accounts.addContact(userId, { name, aliases, email });
+      if (op === 'edit') return accounts.updateContact(userId, id, { name, aliases, email });
+      if (op === 'remove') {
+        const before = (await accounts.contacts(userId)).find((c) => c.id === id);
+        const r = await accounts.removeContact(userId, id);
+        return r.ok ? { ok: true, contact: before } : r;
+      }
+      return { ok: false, errors: ['DEFAULT'] };
+    };
+  }
+
+  // In a space with a fingerprint, a contact change said by voice waits for it: a contact
+  // decides where money goes, and a voice alone could be someone else's.
+  app.post('/api/contacts/confirm', needSpace, async (req, res) => {
+    const { user, store: own } = req.space;
+    const pending = await own.peekPrepared(String(req.body?.prepareId || ''));
+    if (!pending || pending.kind !== 'contact') return res.status(410).json({ errors: ['CONFIRMATION_EXPIRED'] });
+    if (!(await passkeys.verifyConfirmation(user, pending, req.body?.passkey))) return res.status(403).json({ errors: ['PASSKEY_REQUIRED'] });
+    const taken = await own.takePrepared(pending.id);
+    if (!taken) return res.status(410).json({ errors: ['CONFIRMATION_EXPIRED'] });
+    const change = taken.change || {};
+    const r = await saveContactFor(user.id)(change);
+    if (!r.ok) return res.status(422).json({ errors: r.errors });
+    res.json({ ok: true, op: change.op, name: r.contact?.name || change.name });
+  });
+
   // The voice agent: one sentence in, the next thing to say out. It never moves money:
   // at most it prepares a request that the user must still confirm.
   app.post('/api/agent', needSpace, async (req, res) => {
@@ -192,6 +221,7 @@ export function createApp({ config, contacts: demoContacts = [], store, paypal, 
       publicOperation: (op) => publicOperation(op, s.contacts),
       paypal,
       hasPasskey: () => passkeys.registered(s.user),
+      saveContact: saveContactFor(s.user.id),
     });
     try {
       res.json(await agent({
@@ -247,7 +277,8 @@ export function createApp({ config, contacts: demoContacts = [], store, paypal, 
     if (!paypal) return res.status(503).json({ errors: ['SANDBOX_NOT_CONFIGURED'] });
     const { user, contacts, store: own } = req.space;
     const pending = await own.peekPrepared(String(req.body?.prepareId || ''));
-    if (!pending) return res.status(410).json({ errors: ['CONFIRMATION_EXPIRED'] });
+    // A contact change waiting for the fingerprint is not a payment.
+    if (!pending || pending.kind === 'contact') return res.status(410).json({ errors: ['CONFIRMATION_EXPIRED'] });
     // A request prepared by voice, in a space with a passkey, needs the fingerprint for THIS payment.
     if (pending.channel === 'voice' && (await passkeys.registered(user))) {
       const ok = await passkeys.verifyConfirmation(user, pending, req.body?.passkey);

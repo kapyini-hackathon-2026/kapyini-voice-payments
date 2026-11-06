@@ -49,6 +49,8 @@ export function localCommand(text) {
   // Pages: "ouvre mes opérations", "va aux réglages", "accueil", "réglages".
   for (const [hash, re] of PAGES) {
     if (!re.test(s)) continue;
+    // "ajoute un contact", "supprime ce contact": a request for the agent, not a page change.
+    if (hash === '#people' && /\b(ajout\w*|rajout\w*|supprim\w*|efface\w*|modifi\w*|renomm\w*|change\w*|retire\w*|enleve\w*|nouveau|add|delete|remove|edit|rename|new|quels?|qui|liste|lis|which|who|list)\b/.test(s)) continue;
     if (GO.test(s) || words <= 2 || /\b(page|ecran|screen)\b/.test(s)) return { nav: hash };
   }
 

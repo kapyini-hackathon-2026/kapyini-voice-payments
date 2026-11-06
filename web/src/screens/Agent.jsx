@@ -9,17 +9,18 @@ import { VOICE } from '../lib/voice-strings.js';
 import { localCommand } from '../voice/commands.js';
 import { runLocal } from '../voice/runLocal.js';
 import { api } from '../lib/format.js';
+import { signPayment } from '../lib/passkey.js';
 import { canListen, earcon, listenOnce, stopSpeaking } from '../voice/speech.js';
 import { btn } from '../components/ui.jsx';
 import { VoiceHeader, VoiceOrb } from '../components/voice-ui.jsx';
 import TransactionCard, { InvoiceCard } from '../components/TransactionCard.jsx';
 
 const REVIEWS = ['REVIEW', 'INVOICE_REVIEW', 'INVOICE_PICK', 'FIX_WHAT', 'AMOUNT_MISMATCH', 'DUPLICATE'];
-const CONFIRMS = ['CONFIRM_ASK', 'SAY_AMOUNT', 'USE_PASSKEY', 'PASSKEY_HINT', 'INVOICE_CONFIRM_ASK', 'INVOICE_SAY_AMOUNT', 'INVOICE_AMOUNT_MISMATCH'];
+const CONFIRMS = ['CONFIRM_ASK', 'SAY_AMOUNT', 'USE_PASSKEY', 'PASSKEY_HINT', 'CT_REVIEW', 'CT_REMOVE_CONFIRM', 'CT_USE_PASSKEY', 'INVOICE_CONFIRM_ASK', 'INVOICE_SAY_AMOUNT', 'INVOICE_AMOUNT_MISMATCH'];
 
 export default function Agent({ arg }) {
   const kapyini = useKapyini();
-  const { t, c, lang, setLang, output, setOutput, setRate, rate, config, flow, setFlow, say, go, confirmPayment, handOver, setMode, userName } = kapyini;
+  const { t, c, lang, setLang, output, setOutput, setRate, rate, config, flow, setFlow, say, go, confirmPayment, handOver, setMode, userName, refreshConfig } = kapyini;
   const v = VOICE[lang];
   const [phase, setPhase] = useState('idle'); // idle | listening | thinking | speaking | passkey | problem
   const [awake, setAwake] = useState(Boolean(flow.justOnboarded || flow.pendingText || arg === 'listen'));
@@ -31,6 +32,8 @@ export default function Agent({ arg }) {
   const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
+  // A contact change said by voice, waiting for the fingerprint (spaces that have one).
+  const [contactSign, setContactSign] = useState(null);
   const draftRef = useRef({});
   const last = useRef({ text: '', question: false, expecting: null });
   const silences = useRef(0);
@@ -70,7 +73,7 @@ export default function Agent({ arg }) {
 
   const confirming = ['confirm', 'invoice_confirm'].includes(draft.stage);
   const wantsFinger = draft.stage === 'confirm' && draft.method === 'passkey';
-  const orbState = phase !== 'idle' ? phase : wantsFinger ? 'passkey' : confirming ? 'confirm' : 'idle';
+  const orbState = phase !== 'idle' ? phase : wantsFinger || contactSign ? 'passkey' : confirming ? 'confirm' : 'idle';
 
   // ----- speaking -----
   async function respond(raw, { question = false, expecting = null, override } = {}) {
@@ -134,22 +137,54 @@ export default function Agent({ arg }) {
     if (phase === 'listening') return stopRef.current();
     if (phase === 'thinking' || phase === 'passkey') return;
     if (wantsFinger) return fingerprint();
+    if (contactSign) return contactFingerprint(contactSign);
     listen(); // also interrupts Kapyiŋi while it speaks
   }
 
   // ----- the fingerprint: the phone's sensor signs THIS payment; the server checks the signature -----
-  async function fingerprint() {
+  // With `auto`, the sensor opens right after "oui". Some browsers (Safari) only open it after a
+  // touch: when it is refused at once, Kapyiŋi asks for a touch on the disc instead.
+  async function fingerprint({ auto = false } = {}) {
     if (busy) return;
     setBusy(true);
     setPhase('passkey');
+    const startedAt = Date.now();
     const r = await confirmPayment(draftRef.current.prepareId, { passkey: true });
     if (!alive.current) return;
     setBusy(false);
     if (r.ok) return; // handOver() already speaks and opens PayPal
-    setPhase('problem');
     const code = r.errors?.[0];
+    if (auto && code === 'PASSKEY_CANCELLED' && Date.now() - startedAt < 1500) { setPhase('idle'); return respond(v.touchForFinger); }
+    setPhase('problem');
     if (code === 'CONFIRMATION_EXPIRED') { draftRef.current = {}; setDraft({}); return respond(t.errors.CONFIRMATION_EXPIRED); }
     await respond(code === 'PASSKEY_CANCELLED' ? v.passkeyCancelled : v.passkeyRefused, { question: true, expecting: 'yesno' });
+  }
+
+  // A contact change said by voice: the sensor signs it, the server checks and saves it.
+  async function contactFingerprint(prepareId, { auto = false } = {}) {
+    if (busy || !prepareId) return;
+    setBusy(true);
+    setPhase('passkey');
+    const startedAt = Date.now();
+    const s = await signPayment(prepareId);
+    const r = s.error ? { ok: false, errors: [s.error] } : await api('/api/contacts/confirm', { body: { prepareId, passkey: s.response } });
+    if (!alive.current) return;
+    setBusy(false);
+    setPhase('idle');
+    const code = r.errors?.[0];
+    if (r.ok) {
+      setContactSign(null);
+      draftRef.current = {};
+      setDraft({});
+      refreshConfig();
+      return respond(r.op === 'remove' ? v.agent.CT_REMOVED({ name: r.name }) : v.agent.CT_SAVED({ op: r.op, name: r.name }));
+    }
+    if (auto && code === 'PASSKEY_CANCELLED' && Date.now() - startedAt < 1500) return respond(v.touchForFinger);
+    if (code === 'PASSKEY_CANCELLED' || code === 'PASSKEY_REFUSED' || code === 'PASSKEY_REQUIRED') return respond(v.contactPasskeyRetry);
+    setContactSign(null);
+    draftRef.current = {};
+    setDraft({});
+    return respond(code === 'CONFIRMATION_EXPIRED' ? t.errors.CONFIRMATION_EXPIRED : v.agent.CT_FAILED({ errors: r.errors }));
   }
 
   // ----- understanding -----
@@ -177,6 +212,8 @@ export default function Agent({ arg }) {
       setDraft(draftRef.current);
       setInvoice(params.invoice || null);
     }
+    if (data.contactsChanged) refreshConfig();
+    if (code !== 'CT_USE_PASSKEY') setContactSign(null);
     const expecting = data.draft?.expecting || null;
     const question = Boolean(expecting);
     if (REVIEWS.includes(code)) earcon.review();
@@ -187,7 +224,13 @@ export default function Agent({ arg }) {
         return confirmPayment(data.prepareId).then((r) => { if (!r.ok) respond((r.errors || ['DEFAULT']).map((e) => t.errors[e] || t.errors.DEFAULT).join(' ')); });
       case 'USE_PASSKEY':
         setChoices([]);
-        return respond(lang === 'fr' ? 'Touchez le grand rond, puis posez votre doigt sur le capteur.' : 'Touch the big circle, then place your finger on the sensor.');
+        await respond(v.agent.USE_PASSKEY());
+        return fingerprint({ auto: true });
+      case 'CT_USE_PASSKEY':
+        setChoices([]);
+        setContactSign(data.prepareId);
+        await respond(v.agent.CT_USE_PASSKEY());
+        return contactFingerprint(data.prepareId, { auto: true });
       case 'INVOICE_CONFIRMED':
         return handOver({ kind: 'invoice', url: data.payUrl, operationId: data.operationId });
       case 'REPEAT':
@@ -255,7 +298,7 @@ export default function Agent({ arg }) {
   const showCard = Boolean(draft.contactId || draft.amount || invoice);
   const pill = !awake ? v.pills.voice : { listening: v.pills.listening, thinking: v.pills.thinking, passkey: v.pills.passkey }[orbState] || (confirming ? v.pills.confirm : v.pills.voice);
   const hint = !awake ? v.resume : { idle: t.orb.idle, listening: t.orb.listening, thinking: t.orb.thinking, speaking: t.orb.speaking, confirm: t.orb.confirm, passkey: v.passkeyAsk, problem: t.orb.idle }[orbState];
-  const orbLabel = !awake ? v.resume : wantsFinger ? v.passkeyButton(c.money(draft.amount, draft.currency)) : t.orbLabel[orbState] || t.orbLabel.idle;
+  const orbLabel = !awake ? v.resume : contactSign && orbState === 'idle' ? v.contactPasskeyButton : wantsFinger ? v.passkeyButton(c.money(draft.amount, draft.currency)) : t.orbLabel[orbState] || t.orbLabel.idle;
 
   return (
     <div className="voice-theme flex flex-col">
@@ -294,7 +337,7 @@ export default function Agent({ arg }) {
                     {ch.href ? (
                       <a className={`${btn.quiet} !bg-transparent`} href={ch.href} target={ch.href.startsWith('http') ? '_blank' : undefined} rel="noreferrer">{ch.label}</a>
                     ) : (
-                      <button type="button" disabled={busy} onClick={() => submit(ch.say, { choiceId: ch.id })}
+                      <button type="button" disabled={busy} onClick={() => (ch.typing ? setTyping(true) : submit(ch.say, { choiceId: ch.id }))}
                         className={ch.kind === 'yes' ? `${btn.primary} !bg-[#0070e0] !text-white` : `${btn.quiet} !bg-transparent`}>
                         <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-full border-2 border-current text-base">{ch.n || i + 1}</span>
                         <span>{ch.label}</span>

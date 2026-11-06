@@ -3,6 +3,12 @@
 const nb = (s) => s.replace(/ ([?!:;])/g, ' $1').replace(/« /g, '« ').replace(/ »/g, ' »');
 const listFr = (names) => names.map((n, i) => `${i + 1} : ${n}`).join(' ; ');
 const listEn = (names) => names.map((n, i) => `${i + 1}: ${n}`).join('; ');
+// An address read aloud: "fatou arobase personal point example point com".
+const emailFr = (e = '') => e.replace('@', ' arobase ').replace(/\./g, ' point ');
+const emailEn = (e = '') => e.replace('@', ' at ').replace(/\./g, ' dot ');
+// Why a contact was refused, before the question asked again (RAW is defined below; read at call time).
+const errsFr = (p) => (p.errors?.length ? `${p.errors.map((e) => RAW.fr.people.errors[e] || RAW.fr.people.errors.DEFAULT).join(' ')} ` : '');
+const errsEn = (p) => (p.errors?.length ? `${p.errors.map((e) => RAW.en.people.errors[e] || RAW.en.people.errors.DEFAULT).join(' ')} ` : '');
 
 const RAW = {
   fr: {
@@ -16,6 +22,22 @@ const RAW = {
         : nb(`Pour envoyer, dites : j’envoie ${c.words(p.summary.amount, p.summary.currency)}. Pour arrêter, dites : annule.`),
       USE_PASSKEY: () => 'Posez votre doigt sur le capteur, ou regardez l’écran.',
       PASSKEY_HINT: () => nb('Dites oui, puis posez votre doigt. Ou dites : annule.'),
+      // ----- contacts by voice -----
+      CT_ASK_NAME: (p) => nb(`${errsFr(p)}${p.again ? 'Je n’ai pas entendu de nom. ' : ''}${p.op === 'edit' ? `Quel est le nouveau nom${p.current ? ` à la place de ${p.current}` : ''} ?` : 'Quel est le nom de la personne à ajouter ?'}`),
+      CT_ASK_ALIAS: (p) => nb(`${errsFr(p)}${p.op === 'edit' ? `Quel surnom pour ${p.name} ?${p.current?.length ? ` Aujourd’hui : ${p.current.join(', ')}.` : ''} Ou dites : aucun.` : `Voulez-vous donner un surnom à ${p.name}, par exemple « mon frère » ? Dites le surnom, ou dites : aucun.`}`),
+      CT_ASK_EMAIL: (p) => nb(`${errsFr(p)}${p.heard ? `Je n’ai pas reconnu d’adresse e-mail dans « ${p.heard} ». ` : ''}${p.op === 'edit' && p.current ? `L’adresse de ${p.name} est ${emailFr(p.current)}. Quelle est la nouvelle adresse ?` : `Quelle est l’adresse e-mail PayPal Sandbox de ${p.name} ?`} Dites « arobase » et « point », ou touchez « Écrire l’adresse ».`),
+      CT_REVIEW: (p) => nb(`${p.again ? 'Je n’ai pas compris. ' : ''}${p.op === 'edit' ? 'Je modifie ce contact' : 'J’ajoute ce contact'} : ${p.contact.name}${p.contact.aliases?.length ? `, surnom « ${p.contact.aliases.join(', ')} »` : ', sans surnom'}, adresse ${emailFr(p.contact.email)}. C’est bien ça ? Dites oui ou non.`),
+      CT_USE_PASSKEY: () => 'Posez votre doigt sur le capteur pour enregistrer.',
+      CT_SAVED: (p) => (p.op === 'edit' ? `C’est fait, ${p.name} est modifié.` : `C’est fait, ${p.name} est dans vos contacts. Vous pouvez dire par exemple : envoie dix euros à ${p.name}.`),
+      CT_PICK: (p) => nb(`${p.again ? 'Je n’ai pas trouvé ce contact. ' : ''}Quel contact voulez-vous ${p.op === 'remove' ? 'supprimer' : 'modifier'} ? ${listFr(p.names || [])}. Dites un nom, ou un numéro.`),
+      CT_FIELD: (p) => nb(`Que voulez-vous changer pour ${p.name} : le nom, le surnom, ou l’adresse ?`),
+      CT_REMOVE_CONFIRM: (p) => nb(`Supprimer ${p.name} de vos contacts ? Dites oui ou non.`),
+      CT_REMOVED: (p) => `C’est fait, ${p.name} n’est plus dans vos contacts.`,
+      CT_LIST: (p) => nb(`Vous avez ${p.names.length === 1 ? 'un contact' : `${p.names.length} contacts`} : ${p.names.join(', ')}.`),
+      CT_NONE: () => nb('Vous n’avez aucun contact. Dites : ajoute un contact.'),
+      CT_GONE: () => 'Ce contact n’existe plus. Rien n’a été changé.',
+      CT_CANCELLED: () => 'D’accord, je ne change rien à vos contacts.',
+      CT_FAILED: (p) => `${errsFr(p)}Rien n’a été changé.`,
     },
     // ----- first launch and modes -----
     onboard: {
@@ -53,6 +75,9 @@ const RAW = {
     passkeyButton: (amount) => `Confirmer ${amount} avec mon empreinte`,
     passkeyCancelled: 'Empreinte annulée. Rien n’est parti. Dites oui pour réessayer, ou annule.',
     passkeyRefused: 'Je n’ai pas pu vérifier l’empreinte. Rien n’est parti. Dites oui pour réessayer, ou annule.',
+    touchForFinger: 'Touchez le grand rond, puis posez votre doigt sur le capteur.',
+    contactPasskeyRetry: 'L’empreinte n’a pas été vérifiée. Rien n’a été changé. Touchez le grand rond pour réessayer, ou dites : annule.',
+    contactPasskeyButton: 'Enregistrer avec mon empreinte',
     classic: {
       hello: (n) => `Bonjour${n ? ` ${n}` : ''}`,
       intro: 'Que voulez-vous faire ?',
@@ -142,6 +167,21 @@ const RAW = {
         : `To send, say: I send ${c.words(p.summary.amount, p.summary.currency)}. To stop, say: cancel.`,
       USE_PASSKEY: () => 'Place your finger on the sensor, or look at the screen.',
       PASSKEY_HINT: () => 'Say yes, then place your finger. Or say: cancel.',
+      CT_ASK_NAME: (p) => `${errsEn(p)}${p.again ? 'I didn’t hear a name. ' : ''}${p.op === 'edit' ? `What is the new name${p.current ? ` instead of ${p.current}` : ''}?` : 'What is the name of the person to add?'}`,
+      CT_ASK_ALIAS: (p) => `${errsEn(p)}${p.op === 'edit' ? `Which nickname for ${p.name}?${p.current?.length ? ` Now: ${p.current.join(', ')}.` : ''} Or say: none.` : `Would you like a nickname for ${p.name}, for example “my brother”? Say the nickname, or say: none.`}`,
+      CT_ASK_EMAIL: (p) => `${errsEn(p)}${p.heard ? `I didn’t recognise an e-mail address in “${p.heard}”. ` : ''}${p.op === 'edit' && p.current ? `${p.name}’s address is ${emailEn(p.current)}. What is the new address?` : `What is ${p.name}’s PayPal Sandbox e-mail address?`} Say “at” and “dot”, or touch “Type the address”.`,
+      CT_REVIEW: (p) => `${p.again ? 'I didn’t understand. ' : ''}${p.op === 'edit' ? 'I’ll update this contact' : 'I’ll add this contact'}: ${p.contact.name}${p.contact.aliases?.length ? `, nickname “${p.contact.aliases.join(', ')}”` : ', no nickname'}, address ${emailEn(p.contact.email)}. Is that right? Say yes or no.`,
+      CT_USE_PASSKEY: () => 'Place your finger on the sensor to save.',
+      CT_SAVED: (p) => (p.op === 'edit' ? `Done, ${p.name} is updated.` : `Done, ${p.name} is in your contacts. You can say for example: send ten euros to ${p.name}.`),
+      CT_PICK: (p) => `${p.again ? 'I couldn’t find that contact. ' : ''}Which contact do you want to ${p.op === 'remove' ? 'remove' : 'change'}? ${listEn(p.names || [])}. Say a name, or a number.`,
+      CT_FIELD: (p) => `What do you want to change for ${p.name}: the name, the nickname, or the address?`,
+      CT_REMOVE_CONFIRM: (p) => `Remove ${p.name} from your contacts? Say yes or no.`,
+      CT_REMOVED: (p) => `Done, ${p.name} is no longer in your contacts.`,
+      CT_LIST: (p) => `You have ${p.names.length === 1 ? 'one contact' : `${p.names.length} contacts`}: ${p.names.join(', ')}.`,
+      CT_NONE: () => 'You have no contacts. Say: add a contact.',
+      CT_GONE: () => 'This contact no longer exists. Nothing was changed.',
+      CT_CANCELLED: () => 'OK, I won’t change your contacts.',
+      CT_FAILED: (p) => `${errsEn(p)}Nothing was changed.`,
     },
     onboard: {
       start: 'Touch to start',
@@ -178,6 +218,9 @@ const RAW = {
     passkeyButton: (amount) => `Confirm ${amount} with my fingerprint`,
     passkeyCancelled: 'Fingerprint cancelled. Nothing was sent. Say yes to try again, or cancel.',
     passkeyRefused: 'I couldn’t verify the fingerprint. Nothing was sent. Say yes to try again, or cancel.',
+    touchForFinger: 'Touch the big circle, then place your finger on the sensor.',
+    contactPasskeyRetry: 'The fingerprint was not verified. Nothing was changed. Touch the big circle to try again, or say: cancel.',
+    contactPasskeyButton: 'Save with my fingerprint',
     classic: {
       hello: (n) => `Hello${n ? ` ${n}` : ''}`,
       intro: 'What would you like to do?',
