@@ -26,6 +26,7 @@ try {
     currency,
     dueDate: due,
     note: 'Facture fictive pour la démonstration de Kapyiŋi.',
+    requestId: `kapyini-demo-invoice-${Date.now()}`,
   });
   console.log(`Invoice ${inv.id} sent to ${PAYPAL_PAYER_EMAIL}: ${inv.amount} ${inv.currency}, due ${inv.dueDate}`);
 } catch (err) {

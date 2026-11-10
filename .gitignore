@@ -1,5 +1,17 @@
+# Dependencies
 node_modules/
+
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+
+# Local application data
 data/contacts.json
 data/operations.json
+
+# Build output
 web/dist/
+
+# Vercel
+.vercel/
