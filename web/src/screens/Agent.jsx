@@ -12,6 +12,7 @@ import { api } from '../lib/format.js';
 import { signPayment } from '../lib/passkey.js';
 import { canListen, earcon, listenOnce, stopSpeaking } from '../voice/speech.js';
 import { watchForVoice, bargeInOn, isEcho } from '../voice/vad.js';
+import { isBrief, FULL_AFTER } from '../voice/brevity.js';
 import { btn } from '../components/ui.jsx';
 import { VoiceHeader, VoiceOrb } from '../components/voice-ui.jsx';
 import TransactionCard, { InvoiceCard } from '../components/TransactionCard.jsx';
@@ -26,7 +27,9 @@ export default function Agent({ arg }) {
   const { t, c, lang, setLang, output, setOutput, setRate, rate, config, flow, setFlow, say, go, confirmPayment, handOver, setMode, userName, refreshConfig } = kapyini;
   const v = VOICE[lang];
   const [phase, setPhase] = useState('idle'); // idle | listening | thinking | speaking | passkey | problem
-  const [awake, setAwake] = useState(Boolean(flow.justOnboarded || flow.pendingText || arg === 'listen'));
+  // Browsers let a page speak only after a touch on it. On a new visit Kapyiŋi waits for one touch,
+  // anywhere on the screen. Coming back to this screen during the same visit, it is already awake.
+  const [awake, setAwake] = useState(Boolean(flow.justOnboarded || flow.greetNow || flow.pendingText || arg === 'listen' || navigator.userActivation?.hasBeenActive));
   const [heard, setHeard] = useState('');
   const [answer, setAnswer] = useState('');
   const [choices, setChoices] = useState([]);
@@ -45,6 +48,8 @@ export default function Agent({ arg }) {
   // Each listening session has a number; a session dropped on purpose (touch to open the
   // fingerprint sensor) is ignored when it ends.
   const listening = useRef(0);
+  // After help or a mistake, the next sentence is said in full even in brief mode.
+  const fullNext = useRef(false);
   const alive = useRef(true);
   const orbRef = useRef();
   const h1 = useRef();
@@ -59,11 +64,26 @@ export default function Agent({ arg }) {
       submit(text);
     } else if (flow.justOnboarded) {
       setFlow((f) => ({ ...f, justOnboarded: false }));
-      respond(v.onboard.ready(userName));
+      respond(v.onboard.ready(userName), { question: true });
+    } else if (flow.greetNow) {
+      // Just signed in with the finger: that touch lets Kapyiŋi greet at once.
+      setFlow((f) => ({ ...f, greetNow: false }));
+      respond(v.greet(userName), { question: true });
     } else if (arg === 'listen') listen();
     else h1.current?.focus();
     return () => { alive.current = false; stopRef.current(); stopSpeaking(); };
   }, []);
+
+  // Before the first touch: a touch anywhere wakes Kapyiŋi (buttons and links keep their own action).
+  useEffect(() => {
+    if (awake) return undefined;
+    const wake = (e) => {
+      if (e.target.closest?.('a, button, input, textarea, select, label')) return;
+      onOrb();
+    };
+    document.addEventListener('click', wake);
+    return () => document.removeEventListener('click', wake);
+  });
 
   // Space: talk · Esc: stop · R: repeat (the team's design, laptop screens).
   useEffect(() => {
@@ -71,7 +91,7 @@ export default function Agent({ arg }) {
       if (e.target.closest?.('input, textarea, select')) return;
       if (e.code === 'Space') { e.preventDefault(); onOrb(); }
       else if (e.key === 'Escape') { stopRef.current(); stopSpeaking(); setPhase('idle'); }
-      else if (e.key === 'r' || e.key === 'R') { if (last.current.text) respond(last.current.text, last.current); }
+      else if (e.key === 'r' || e.key === 'R') { if (last.current.text) respond(last.current.full || last.current.text, last.current); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -87,10 +107,11 @@ export default function Agent({ arg }) {
   // it (barge-in, see vad.js). With a screen reader we cannot know when VoiceOver or TalkBack has
   // finished, so the user touches the disc when ready. `after: 'none'`: do not listen (the
   // fingerprint sensor opens next).
-  async function respond(raw, { question = false, expecting = null, override, after = 'auto' } = {}) {
+  // `full`: the complete sentence when `raw` is the brief one; "répète" says the complete one.
+  async function respond(raw, { question = false, expecting = null, override, after = 'auto', full = null } = {}) {
     if (!alive.current || !raw) return;
     const text = raw.charAt(0).toUpperCase() + raw.slice(1);
-    last.current = { text, question, expecting };
+    last.current = { text, question, expecting, full };
     setAnswer(text);
     const ownVoice = (override?.output || output) === 'voice';
     setPhase(ownVoice ? 'speaking' : 'idle');
@@ -185,6 +206,7 @@ export default function Agent({ arg }) {
     const code = r.errors?.[0];
     if (auto && code === 'PASSKEY_CANCELLED' && Date.now() - startedAt < 1500) { setPhase('idle'); return respond(v.touchForFinger); }
     setPhase('problem');
+    fullNext.current = true;
     if (code === 'CONFIRMATION_EXPIRED') { draftRef.current = {}; setDraft({}); return respond(t.errors.CONFIRMATION_EXPIRED); }
     await respond(code === 'PASSKEY_CANCELLED' ? v.passkeyCancelled : v.passkeyRefused, { question: true, expecting: 'yesno' });
   }
@@ -223,7 +245,7 @@ export default function Agent({ arg }) {
     const local = localCommand(text);
     if (local && !local.repeat && !(local.nav === 'back' && draftRef.current.stage)) {
       setHeard(text);
-      return runLocal(local, { ...kapyini, repeatText: last.current.text });
+      return runLocal(local, { ...kapyini, repeatText: last.current.full || last.current.text });
     }
     if (/^(mode classique|passe en mode classique|classic mode)$/i.test(text.trim())) return toClassic();
     setHeard(text);
@@ -253,7 +275,7 @@ export default function Agent({ arg }) {
         return confirmPayment(data.prepareId).then((r) => { if (!r.ok) respond((r.errors || ['DEFAULT']).map((e) => t.errors[e] || t.errors.DEFAULT).join(' ')); });
       case 'USE_PASSKEY':
         setChoices([]);
-        await respond(v.agent.USE_PASSKEY(), { after: 'none' });
+        await respond(isBrief(config.account?.id) && v.brief ? v.brief.USE_PASSKEY() : v.agent.USE_PASSKEY(), { after: 'none' });
         return fingerprint({ auto: true });
       case 'CT_USE_PASSKEY':
         setChoices([]);
@@ -263,7 +285,8 @@ export default function Agent({ arg }) {
       case 'INVOICE_CONFIRMED':
         return handOver({ kind: 'invoice', url: data.payUrl, operationId: data.operationId });
       case 'REPEAT':
-        return respond(last.current.text || t.agent.HELP(), { question: last.current.question, expecting: last.current.expecting });
+        // "Répète": always the complete sentence.
+        return respond(last.current.full || last.current.text || t.agent.HELP(), { question: last.current.question, expecting: last.current.expecting });
       case 'SETTING': {
         const { key, value } = params;
         const override = {};
@@ -295,7 +318,11 @@ export default function Agent({ arg }) {
           };
         }));
         const build = v.agent[code] || t.agent[code] || t.agent.NOT_UNDERSTOOD;
-        return respond(build(params, c), { question, expecting });
+        const full = build(params, c);
+        // Brief after the first successful payment, unless the last reply was help or a mistake.
+        const short = isBrief(config.account?.id) && !fullNext.current && v.brief?.[code] ? v.brief[code](params, c) : null;
+        fullNext.current = FULL_AFTER.has(code);
+        return respond(short || full, { question, expecting, full: short ? full : null });
       }
     }
   }

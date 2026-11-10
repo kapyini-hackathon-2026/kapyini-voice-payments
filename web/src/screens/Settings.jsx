@@ -6,6 +6,7 @@ import { VOICE } from '../lib/voice-strings.js';
 import { api } from '../lib/format.js';
 import { passkeyAvailable, registerPasskey } from '../lib/passkey.js';
 import { canDetectVoice, bargeInOn, setBargeIn } from '../voice/vad.js';
+import { deviceKind } from '../lib/device.js';
 
 function Choice({ legend, name, value, options, onChange }) {
   return (
@@ -100,6 +101,7 @@ function MySpace() {
           {account.passkeys > 0 && <button type="button" onClick={removePasskeys} className={quietBtn}>{v.settings.passkeyReset}</button>}
         </div>
         {canPasskey && <p id="passkey-add-hint" className="mt-2 text-slate">{sp.passkeyAddHint}</p>}
+        <p className="mt-2 text-slate">{v.device[deviceKind()]} {v.device.privacy}</p>
       </div>
 
       <p className="mb-6"><a href="#people" className="inline-flex min-h-12 items-center font-bold text-blue">{sp.contactsLink} ›</a></p>

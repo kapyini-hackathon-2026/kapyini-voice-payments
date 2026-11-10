@@ -39,6 +39,23 @@ const RAW = {
       CT_CANCELLED: () => 'D’accord, je ne change rien à vos contacts.',
       CT_FAILED: (p) => `${errsFr(p)}Rien n’a été changé.`,
     },
+    // ----- brief mode (after the first successful payment, see voice/brevity.js) -----
+    // Instructions already learned are dropped. The amount in words and the name stay.
+    brief: {
+      ASK_CONTACT: (p) => nb(`À qui ? ${listFr(p.names || [])}.`),
+      ASK_CURRENCY: (p, c) => nb(`En ${c.currencies()} ?`),
+      CONFIRM_ASK: (p, c) => (p.method === 'passkey'
+        ? nb(`${c.words(p.summary.amount, p.summary.currency)} pour ${p.summary.recipient.name}. Je l’envoie ?`)
+        : nb(`${c.words(p.summary.amount, p.summary.currency)} pour ${p.summary.recipient.name}. Dites : j’envoie ${c.words(p.summary.amount, p.summary.currency)}.`)),
+      USE_PASSKEY: () => 'Votre doigt sur le capteur.',
+      INVOICE_CONFIRM_ASK: (p, c) => nb(`${c.words(p.invoice.amount, p.invoice.currency)} à ${p.invoice.merchant}. Dites : je paie ${c.words(p.invoice.amount, p.invoice.currency)}.`),
+      CT_ASK_NAME: (p) => nb(`${errsFr(p)}${p.op === 'edit' ? 'Le nouveau nom ?' : 'Son nom ?'}`),
+      CT_ASK_ALIAS: (p) => nb(`${errsFr(p)}Un surnom pour ${p.name} ? Ou : aucun.`),
+      CT_ASK_EMAIL: (p) => nb(`${errsFr(p)}${p.heard ? `Je n’ai pas reconnu d’adresse dans « ${p.heard} ». ` : ''}L’adresse e-mail de ${p.name} ?`),
+      CT_REVIEW: (p) => nb(`${p.contact.name}${p.contact.aliases?.length ? `, « ${p.contact.aliases.join(', ')} »` : ''}, ${emailFr(p.contact.email)}. J’enregistre ?`),
+      CT_PICK: (p) => nb(`Lequel ? ${listFr(p.names || [])}.`),
+      CT_REMOVE_CONFIRM: (p) => nb(`Supprimer ${p.name} ?`),
+    },
     // ----- first launch and modes -----
     onboard: {
       start: 'Toucher pour commencer',
@@ -60,10 +77,11 @@ const RAW = {
       passkeyNone: 'Cet appareil ne propose pas d’empreinte. Pour confirmer un envoi, vous redirez le montant à voix haute.',
       passkeyFailed: 'L’empreinte n’a pas été enregistrée. Vous pourrez réessayer dans les réglages. En attendant, vous confirmerez en redisant le montant.',
       classicChosen: 'D’accord. Je reste silencieux. Vous pourrez revenir au mode vocal à tout moment.',
-      ready: (n) => `${n ? `${n}, je` : 'Je'} suis prêt. Touchez le grand rond et dites ce que vous voulez faire, par exemple : envoie vingt euros à mon frère.`,
+      // First visit: what Kapyiŋi can do, once. Later visits only hear the greeting below.
+      ready: (n) => `${n ? `${n}, que` : 'Que'} puis-je faire pour vous ? Vous pouvez dire par exemple : « envoie vingt euros à mon frère », « je veux payer ma facture », « ajoute un contact », ou « qu’est-ce que j’ai envoyé ? ». Parlez quand vous voulez, je vous écoute.`,
     },
-    greet: (n) => `Bonjour${n ? ` ${n}` : ''}. Que puis-je faire pour vous ?`,
-    resume: 'Touchez pour parler à Kapyiŋi',
+    greet: (n) => `${new Date().getHours() >= 18 ? 'Bonsoir' : 'Bonjour'}${n ? ` ${n}` : ''}, que puis-je faire pour vous ?`,
+    resume: 'Touchez l’écran pour parler à Kapyiŋi',
     resumeHint: 'Kapyiŋi vous écoutera ensuite.',
     toClassic: 'Mode classique',
     toVoice: 'Mode vocal',
@@ -91,6 +109,15 @@ const RAW = {
       sandbox: 'Démo Sandbox PayPal : argent fictif.',
     },
     settings: { modeLabel: 'Mode', passkeyLabel: 'Empreinte', passkeyOn: 'Activée sur cet appareil', passkeyOff: 'Non activée', passkeyEnable: 'Activer l’empreinte', passkeyReset: 'Supprimer l’empreinte', nameLabel: 'Votre prénom' },
+    device: {
+      android: 'Sur ce téléphone Android, c’est Android qui choisit la vérification : votre empreinte, votre visage, ou le code de déverrouillage si l’empreinte n’est pas disponible.',
+      iphone: 'Sur cet iPhone, c’est l’iPhone qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      ipad: 'Sur cet iPad, c’est l’iPad qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      mac: 'Sur ce Mac, c’est le Mac qui choisit la vérification : Touch ID, ou le mot de passe du Mac.',
+      windows: 'Sur cet ordinateur Windows, c’est Windows Hello qui choisit la vérification : votre visage, votre empreinte, ou votre code PIN.',
+      other: 'C’est votre appareil qui choisit la vérification : empreinte, visage, ou son code de déverrouillage.',
+      privacy: 'Votre empreinte et votre visage restent dans l’appareil. Kapyiŋi ne les voit jamais : il vérifie seulement une signature.',
+    },
     bargeIn: { label: 'M’interrompre en parlant', hint: 'Quand Kapyiŋi parle, commencez à parler : il se tait et vous écoute. Sur iPhone, cela peut baisser le volume de sa voix.' },
     passkeyErrors: { PASSKEY_REQUIRED: 'Il faut votre empreinte pour confirmer cet envoi.', PASSKEY_CANCELLED: 'Empreinte annulée. Rien n’est parti.', PASSKEY_REFUSED: 'Empreinte non vérifiée. Rien n’est parti.' },
     // Each user's own space: contacts, history, fingerprints, settings.
@@ -235,7 +262,16 @@ const RAW = {
       sandbox: 'PayPal Sandbox demo: play money.',
     },
     settings: { modeLabel: 'Mode', passkeyLabel: 'Fingerprint', passkeyOn: 'On for this device', passkeyOff: 'Off', passkeyEnable: 'Turn on fingerprint', passkeyReset: 'Remove fingerprint', nameLabel: 'Your first name' },
-    // TODO(Gueriatou): EN — French placeholder below.
+    // TODO(Gueriatou): EN — French placeholders below (device, bargeIn).
+    device: {
+      android: 'Sur ce téléphone Android, c’est Android qui choisit la vérification : votre empreinte, votre visage, ou le code de déverrouillage si l’empreinte n’est pas disponible.',
+      iphone: 'Sur cet iPhone, c’est l’iPhone qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      ipad: 'Sur cet iPad, c’est l’iPad qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      mac: 'Sur ce Mac, c’est le Mac qui choisit la vérification : Touch ID, ou le mot de passe du Mac.',
+      windows: 'Sur cet ordinateur Windows, c’est Windows Hello qui choisit la vérification : votre visage, votre empreinte, ou votre code PIN.',
+      other: 'C’est votre appareil qui choisit la vérification : empreinte, visage, ou son code de déverrouillage.',
+      privacy: 'Votre empreinte et votre visage restent dans l’appareil. Kapyiŋi ne les voit jamais : il vérifie seulement une signature.',
+    },
     bargeIn: { label: 'M’interrompre en parlant', hint: 'Quand Kapyiŋi parle, commencez à parler : il se tait et vous écoute. Sur iPhone, cela peut baisser le volume de sa voix.' },
     passkeyErrors: { PASSKEY_REQUIRED: 'Your fingerprint is needed to confirm this payment.', PASSKEY_CANCELLED: 'Fingerprint cancelled. Nothing was sent.', PASSKEY_REFUSED: 'Fingerprint not verified. Nothing was sent.' },
     space: {
