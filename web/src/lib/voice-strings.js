@@ -91,6 +91,7 @@ const RAW = {
       sandbox: 'Démo Sandbox PayPal : argent fictif.',
     },
     settings: { modeLabel: 'Mode', passkeyLabel: 'Empreinte', passkeyOn: 'Activée sur cet appareil', passkeyOff: 'Non activée', passkeyEnable: 'Activer l’empreinte', passkeyReset: 'Supprimer l’empreinte', nameLabel: 'Votre prénom' },
+    bargeIn: { label: 'M’interrompre en parlant', hint: 'Quand Kapyiŋi parle, commencez à parler : il se tait et vous écoute. Sur iPhone, cela peut baisser le volume de sa voix.' },
     passkeyErrors: { PASSKEY_REQUIRED: 'Il faut votre empreinte pour confirmer cet envoi.', PASSKEY_CANCELLED: 'Empreinte annulée. Rien n’est parti.', PASSKEY_REFUSED: 'Empreinte non vérifiée. Rien n’est parti.' },
     // Each user's own space: contacts, history, fingerprints, settings.
     space: {
@@ -234,6 +235,8 @@ const RAW = {
       sandbox: 'PayPal Sandbox demo: play money.',
     },
     settings: { modeLabel: 'Mode', passkeyLabel: 'Fingerprint', passkeyOn: 'On for this device', passkeyOff: 'Off', passkeyEnable: 'Turn on fingerprint', passkeyReset: 'Remove fingerprint', nameLabel: 'Your first name' },
+    // TODO(Gueriatou): EN — French placeholder below.
+    bargeIn: { label: 'M’interrompre en parlant', hint: 'Quand Kapyiŋi parle, commencez à parler : il se tait et vous écoute. Sur iPhone, cela peut baisser le volume de sa voix.' },
     passkeyErrors: { PASSKEY_REQUIRED: 'Your fingerprint is needed to confirm this payment.', PASSKEY_CANCELLED: 'Fingerprint cancelled. Nothing was sent.', PASSKEY_REFUSED: 'Fingerprint not verified. Nothing was sent.' },
     space: {
       login: 'I already have a space: use my fingerprint',
