@@ -26,7 +26,9 @@ export default function Agent({ arg }) {
   const { t, c, lang, setLang, output, setOutput, setRate, rate, config, flow, setFlow, say, go, confirmPayment, handOver, setMode, userName, refreshConfig } = kapyini;
   const v = VOICE[lang];
   const [phase, setPhase] = useState('idle'); // idle | listening | thinking | speaking | passkey | problem
-  const [awake, setAwake] = useState(Boolean(flow.justOnboarded || flow.pendingText || arg === 'listen'));
+  // Browsers let a page speak only after a touch on it. On a new visit Kapyiŋi waits for one touch,
+  // anywhere on the screen. Coming back to this screen during the same visit, it is already awake.
+  const [awake, setAwake] = useState(Boolean(flow.justOnboarded || flow.greetNow || flow.pendingText || arg === 'listen' || navigator.userActivation?.hasBeenActive));
   const [heard, setHeard] = useState('');
   const [answer, setAnswer] = useState('');
   const [choices, setChoices] = useState([]);
@@ -59,11 +61,26 @@ export default function Agent({ arg }) {
       submit(text);
     } else if (flow.justOnboarded) {
       setFlow((f) => ({ ...f, justOnboarded: false }));
-      respond(v.onboard.ready(userName));
+      respond(v.onboard.ready(userName), { question: true });
+    } else if (flow.greetNow) {
+      // Just signed in with the finger: that touch lets Kapyiŋi greet at once.
+      setFlow((f) => ({ ...f, greetNow: false }));
+      respond(v.greet(userName), { question: true });
     } else if (arg === 'listen') listen();
     else h1.current?.focus();
     return () => { alive.current = false; stopRef.current(); stopSpeaking(); };
   }, []);
+
+  // Before the first touch: a touch anywhere wakes Kapyiŋi (buttons and links keep their own action).
+  useEffect(() => {
+    if (awake) return undefined;
+    const wake = (e) => {
+      if (e.target.closest?.('a, button, input, textarea, select, label')) return;
+      onOrb();
+    };
+    document.addEventListener('click', wake);
+    return () => document.removeEventListener('click', wake);
+  });
 
   // Space: talk · Esc: stop · R: repeat (the team's design, laptop screens).
   useEffect(() => {

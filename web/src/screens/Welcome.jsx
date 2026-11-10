@@ -77,7 +77,7 @@ export default function Welcome() {
     setOrb('done');
     await talk(sp.loginDone(r.account.name));
     // The mode is a choice of this device: ask it if it was never made here.
-    if (mode) { alive.current = false; await refreshConfig(); window.location.hash = '#home'; } else start();
+    if (mode) { alive.current = false; setFlow((f) => ({ ...f, greetNow: true })); await refreshConfig(); window.location.hash = '#home'; } else start();
   }
 
   async function start() {
