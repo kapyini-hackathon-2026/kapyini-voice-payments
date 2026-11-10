@@ -39,6 +39,23 @@ const RAW = {
       CT_CANCELLED: () => 'D’accord, je ne change rien à vos contacts.',
       CT_FAILED: (p) => `${errsFr(p)}Rien n’a été changé.`,
     },
+    // ----- brief mode (after the first successful payment, see voice/brevity.js) -----
+    // Instructions already learned are dropped. The amount in words and the name stay.
+    brief: {
+      ASK_CONTACT: (p) => nb(`À qui ? ${listFr(p.names || [])}.`),
+      ASK_CURRENCY: (p, c) => nb(`En ${c.currencies()} ?`),
+      CONFIRM_ASK: (p, c) => (p.method === 'passkey'
+        ? nb(`${c.words(p.summary.amount, p.summary.currency)} pour ${p.summary.recipient.name}. Je l’envoie ?`)
+        : nb(`${c.words(p.summary.amount, p.summary.currency)} pour ${p.summary.recipient.name}. Dites : j’envoie ${c.words(p.summary.amount, p.summary.currency)}.`)),
+      USE_PASSKEY: () => 'Votre doigt sur le capteur.',
+      INVOICE_CONFIRM_ASK: (p, c) => nb(`${c.words(p.invoice.amount, p.invoice.currency)} à ${p.invoice.merchant}. Dites : je paie ${c.words(p.invoice.amount, p.invoice.currency)}.`),
+      CT_ASK_NAME: (p) => nb(`${errsFr(p)}${p.op === 'edit' ? 'Le nouveau nom ?' : 'Son nom ?'}`),
+      CT_ASK_ALIAS: (p) => nb(`${errsFr(p)}Un surnom pour ${p.name} ? Ou : aucun.`),
+      CT_ASK_EMAIL: (p) => nb(`${errsFr(p)}${p.heard ? `Je n’ai pas reconnu d’adresse dans « ${p.heard} ». ` : ''}L’adresse e-mail de ${p.name} ?`),
+      CT_REVIEW: (p) => nb(`${p.contact.name}${p.contact.aliases?.length ? `, « ${p.contact.aliases.join(', ')} »` : ''}, ${emailFr(p.contact.email)}. J’enregistre ?`),
+      CT_PICK: (p) => nb(`Lequel ? ${listFr(p.names || [])}.`),
+      CT_REMOVE_CONFIRM: (p) => nb(`Supprimer ${p.name} ?`),
+    },
     // ----- first launch and modes -----
     onboard: {
       start: 'Toucher pour commencer',

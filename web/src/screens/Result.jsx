@@ -4,9 +4,10 @@ import { useKapyini } from '../context.js';
 import { Page, Tick, btn } from '../components/ui.jsx';
 import { api, toneOf } from '../lib/format.js';
 import { earcon } from '../voice/speech.js';
+import { countSuccess } from '../voice/brevity.js';
 
 export default function Result({ arg }) {
-  const { t, c, lang, say, go } = useKapyini();
+  const { t, c, lang, say, go, config } = useKapyini();
   const [op, setOp] = useState(null);
   const [checking, setChecking] = useState(false);
 
@@ -25,6 +26,8 @@ export default function Result({ arg }) {
     const o = data.operation;
     setOp(o);
     if (!announce) return;
+    // Confirmed by PayPal: from now on Kapyiŋi can be brief with this user (voice/brevity.js).
+    if (o.state === 'completed') countSuccess(config.account?.id, o.id);
     if (o.state === 'completed') earcon.success(); else if (toneOf(o.state) === 'stop') earcon.problem();
     const { title, body } = texts(o);
     say(`${title} ${body}`);
