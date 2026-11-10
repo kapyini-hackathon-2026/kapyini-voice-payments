@@ -10,6 +10,7 @@ import { VOICE } from '../lib/voice-strings.js';
 import { canListen, earcon, listenOnce, speak } from '../voice/speech.js';
 import { passkeyAvailable, registerPasskey, loginWithPasskey } from '../lib/passkey.js';
 import { api } from '../lib/format.js';
+import { deviceKind } from '../lib/device.js';
 import { VoiceHeader, VoiceOrb } from '../components/voice-ui.jsx';
 
 const plain = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
@@ -191,6 +192,7 @@ export default function Welcome() {
                 <>
                   <button type="button" disabled={busy} className={`${btnMain} items-center bg-[#0070e0] text-white`} onClick={enablePasskey}>{v.passkeyButton}</button>
                   <button type="button" className={`${btnMain} items-center border-2 border-line`} onClick={() => finish()}>{v.passkeyLater}</button>
+                  <p className="text-left text-slate">{VOICE[lang].device[deviceKind()]} {VOICE[lang].device.privacy}</p>
                 </>
               )}
             </div>

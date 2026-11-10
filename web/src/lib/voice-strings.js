@@ -109,6 +109,15 @@ const RAW = {
       sandbox: 'Démo Sandbox PayPal : argent fictif.',
     },
     settings: { modeLabel: 'Mode', passkeyLabel: 'Empreinte', passkeyOn: 'Activée sur cet appareil', passkeyOff: 'Non activée', passkeyEnable: 'Activer l’empreinte', passkeyReset: 'Supprimer l’empreinte', nameLabel: 'Votre prénom' },
+    device: {
+      android: 'Sur ce téléphone Android, c’est Android qui choisit la vérification : votre empreinte, votre visage, ou le code de déverrouillage si l’empreinte n’est pas disponible.',
+      iphone: 'Sur cet iPhone, c’est l’iPhone qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      ipad: 'Sur cet iPad, c’est l’iPad qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      mac: 'Sur ce Mac, c’est le Mac qui choisit la vérification : Touch ID, ou le mot de passe du Mac.',
+      windows: 'Sur cet ordinateur Windows, c’est Windows Hello qui choisit la vérification : votre visage, votre empreinte, ou votre code PIN.',
+      other: 'C’est votre appareil qui choisit la vérification : empreinte, visage, ou son code de déverrouillage.',
+      privacy: 'Votre empreinte et votre visage restent dans l’appareil. Kapyiŋi ne les voit jamais : il vérifie seulement une signature.',
+    },
     bargeIn: { label: 'M’interrompre en parlant', hint: 'Quand Kapyiŋi parle, commencez à parler : il se tait et vous écoute. Sur iPhone, cela peut baisser le volume de sa voix.' },
     passkeyErrors: { PASSKEY_REQUIRED: 'Il faut votre empreinte pour confirmer cet envoi.', PASSKEY_CANCELLED: 'Empreinte annulée. Rien n’est parti.', PASSKEY_REFUSED: 'Empreinte non vérifiée. Rien n’est parti.' },
     // Each user's own space: contacts, history, fingerprints, settings.
@@ -253,7 +262,16 @@ const RAW = {
       sandbox: 'PayPal Sandbox demo: play money.',
     },
     settings: { modeLabel: 'Mode', passkeyLabel: 'Fingerprint', passkeyOn: 'On for this device', passkeyOff: 'Off', passkeyEnable: 'Turn on fingerprint', passkeyReset: 'Remove fingerprint', nameLabel: 'Your first name' },
-    // TODO(Gueriatou): EN — French placeholder below.
+    // TODO(Gueriatou): EN — French placeholders below (device, bargeIn).
+    device: {
+      android: 'Sur ce téléphone Android, c’est Android qui choisit la vérification : votre empreinte, votre visage, ou le code de déverrouillage si l’empreinte n’est pas disponible.',
+      iphone: 'Sur cet iPhone, c’est l’iPhone qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      ipad: 'Sur cet iPad, c’est l’iPad qui choisit la vérification : Face ID ou Touch ID, ou votre code si besoin.',
+      mac: 'Sur ce Mac, c’est le Mac qui choisit la vérification : Touch ID, ou le mot de passe du Mac.',
+      windows: 'Sur cet ordinateur Windows, c’est Windows Hello qui choisit la vérification : votre visage, votre empreinte, ou votre code PIN.',
+      other: 'C’est votre appareil qui choisit la vérification : empreinte, visage, ou son code de déverrouillage.',
+      privacy: 'Votre empreinte et votre visage restent dans l’appareil. Kapyiŋi ne les voit jamais : il vérifie seulement une signature.',
+    },
     bargeIn: { label: 'M’interrompre en parlant', hint: 'Quand Kapyiŋi parle, commencez à parler : il se tait et vous écoute. Sur iPhone, cela peut baisser le volume de sa voix.' },
     passkeyErrors: { PASSKEY_REQUIRED: 'Your fingerprint is needed to confirm this payment.', PASSKEY_CANCELLED: 'Fingerprint cancelled. Nothing was sent.', PASSKEY_REFUSED: 'Fingerprint not verified. Nothing was sent.' },
     space: {
