@@ -5,6 +5,7 @@ import { readSession, writeSession } from '../storage.js';
 import { VOICE } from '../lib/voice-strings.js';
 import { api } from '../lib/format.js';
 import { passkeyAvailable, registerPasskey } from '../lib/passkey.js';
+import { canDetectVoice, bargeInOn, setBargeIn } from '../voice/vad.js';
 
 function Choice({ legend, name, value, options, onChange }) {
   return (
@@ -126,6 +127,7 @@ export default function Settings() {
   const { t, lang, setLang, output, setOutput, rate, setRate, config, mode, setMode } = useKapyini();
   const v = VOICE[lang];
   const [simulate, setSimulate] = useState(readSession('kapyini-simulate') === '1');
+  const [bargeIn, setBargeInState] = useState(bargeInOn);
   return (
     <Page title={t.settingsTitle} back={{ href: '#home', label: t.back }}>
       <MySpace />
@@ -133,6 +135,14 @@ export default function Settings() {
       <Choice legend={t.language} name="lang" value={lang} onChange={setLang} options={[['fr', 'Français'], ['en', 'English']]} />
       <Choice legend={t.outputLabel} name="output" value={output} onChange={setOutput} options={[['screenreader', t.outputScreenReader], ['voice', t.outputVoice]]} />
       <Choice legend={t.rateLabel} name="rate" value={rate} onChange={setRate} options={Object.entries(t.rates)} />
+      {canDetectVoice && mode === 'voice' && output === 'voice' && (
+        <div className="mb-8 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1">
+          <input type="checkbox" id="bargein" aria-describedby="bargein-hint" checked={bargeIn} className="h-6 w-6 accent-[var(--text)]"
+            onChange={(e) => { setBargeInState(e.target.checked); setBargeIn(e.target.checked); }} />
+          <label htmlFor="bargein" className="text-lg font-bold">{v.bargeIn.label}</label>
+          <p id="bargein-hint" className="col-start-2 text-slate">{v.bargeIn.hint}</p>
+        </div>
+      )}
       {config.canSimulateDecline && (
         <div className="mb-8 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1">
           <input type="checkbox" id="simulate" aria-describedby="simulate-hint" checked={simulate} className="h-6 w-6 accent-[var(--text)]"

@@ -11,11 +11,14 @@ import { runLocal } from '../voice/runLocal.js';
 import { api } from '../lib/format.js';
 import { signPayment } from '../lib/passkey.js';
 import { canListen, earcon, listenOnce, stopSpeaking } from '../voice/speech.js';
+import { watchForVoice, bargeInOn, isEcho } from '../voice/vad.js';
 import { btn } from '../components/ui.jsx';
 import { VoiceHeader, VoiceOrb } from '../components/voice-ui.jsx';
 import TransactionCard, { InvoiceCard } from '../components/TransactionCard.jsx';
 
 const REVIEWS = ['REVIEW', 'INVOICE_REVIEW', 'INVOICE_PICK', 'FIX_WHAT', 'AMOUNT_MISMATCH', 'DUPLICATE'];
+// After a reply that is not a question, Kapyiŋi keeps listening this long, then rests.
+const LISTEN_WINDOW_MS = 8000;
 const CONFIRMS = ['CONFIRM_ASK', 'SAY_AMOUNT', 'USE_PASSKEY', 'PASSKEY_HINT', 'CT_REVIEW', 'CT_REMOVE_CONFIRM', 'CT_USE_PASSKEY', 'INVOICE_CONFIRM_ASK', 'INVOICE_SAY_AMOUNT', 'INVOICE_AMOUNT_MISMATCH'];
 
 export default function Agent({ arg }) {
@@ -39,6 +42,9 @@ export default function Agent({ arg }) {
   const silences = useRef(0);
   const failures = useRef(0);
   const stopRef = useRef(() => {});
+  // Each listening session has a number; a session dropped on purpose (touch to open the
+  // fingerprint sensor) is ignored when it ends.
+  const listening = useRef(0);
   const alive = useRef(true);
   const orbRef = useRef();
   const h1 = useRef();
@@ -76,43 +82,64 @@ export default function Agent({ arg }) {
   const orbState = phase !== 'idle' ? phase : wantsFinger || contactSign ? 'passkey' : confirming ? 'confirm' : 'idle';
 
   // ----- speaking -----
-  async function respond(raw, { question = false, expecting = null, override } = {}) {
+  // With Kapyiŋi's own voice we know when it stops, so it listens right after: until an answer
+  // after a question, for a few seconds after anything else. Talking while it speaks interrupts
+  // it (barge-in, see vad.js). With a screen reader we cannot know when VoiceOver or TalkBack has
+  // finished, so the user touches the disc when ready. `after: 'none'`: do not listen (the
+  // fingerprint sensor opens next).
+  async function respond(raw, { question = false, expecting = null, override, after = 'auto' } = {}) {
     if (!alive.current || !raw) return;
     const text = raw.charAt(0).toUpperCase() + raw.slice(1);
     last.current = { text, question, expecting };
     setAnswer(text);
-    setPhase(output === 'voice' ? 'speaking' : 'idle');
+    const ownVoice = (override?.output || output) === 'voice';
+    setPhase(ownVoice ? 'speaking' : 'idle');
+    let interrupted = false;
+    const stopWatching = ownVoice && canListen && after !== 'none' && bargeInOn()
+      ? watchForVoice({ onVoice: () => { interrupted = true; stopSpeaking(); } })
+      : () => {};
     await say(text, override);
+    stopWatching();
     if (!alive.current) return;
     setPhase('idle');
-    // With Kapyiŋi's own voice we know when it stopped, so it listens right away.
-    // With a screen reader we cannot know, so the user touches the disc when ready.
-    if (question && output === 'voice' && canListen) listen();
-    else orbRef.current?.focus();
+    if (!ownVoice || !canListen || after === 'none') return orbRef.current?.focus();
+    if (interrupted) return listen({ echoOf: text });
+    listen({ window: !question });
   }
 
   // ----- listening -----
-  async function listen() {
+  // `window`: nobody was asked anything, so listen for a few seconds only, then rest (battery,
+  // privacy). `echoOf`: listening started by an interruption; a transcript that repeats that
+  // sentence is Kapyiŋi hearing itself, and is ignored.
+  async function listen({ window: short = false, echoOf = null } = {}) {
     if (!canListen) { setTyping(true); return respond(t.noMic); }
     stopRef.current();
     stopSpeaking();
     earcon.listen();
     setPhase('listening');
-    const session = listenOnce({ lang, onInterim: (x) => x && setHeard(x) });
+    const id = ++listening.current;
+    let spoke = false;
+    const session = listenOnce({ lang, onInterim: (x) => { if (x) { spoke = true; setHeard(x); } } });
     stopRef.current = session.stop;
+    const timer = short ? setTimeout(() => { if (!spoke) session.stop(); }, LISTEN_WINDOW_MS) : null;
     let text = '';
     try {
       text = await session.promise;
     } catch (e) {
-      if (!alive.current) return;
+      clearTimeout(timer);
+      if (!alive.current || id !== listening.current) return;
       setPhase('idle');
-      if (e.message === 'denied') { setTyping(true); return respond(t.micDenied); }
+      if (e.message === 'denied') { setTyping(true); return respond(t.micDenied, { after: 'none' }); }
+      if (short) { earcon.stop(); return; }
       failures.current += 1;
       return respond(failures.current >= 2 ? t.noisy : t.stillListening.default, { question: failures.current < 2, expecting: last.current.expecting });
     }
-    if (!alive.current) return;
+    clearTimeout(timer);
+    if (!alive.current || id !== listening.current) return;
     earcon.stop();
     setPhase('idle');
+    if (text && echoOf && isEcho(text, echoOf)) return listen({ window: !last.current.question });
+    if (!text && short) return; // the listening window closed: back to rest, with the falling sound
     if (!text) {
       // Silence: one gentle reminder of what to say, then a pause. Silence never means "yes".
       silences.current += 1;
@@ -134,7 +161,9 @@ export default function Agent({ arg }) {
       setAwake(true);
       return respond(v.greet(userName), { question: true });
     }
-    if (phase === 'listening') return stopRef.current();
+    // Waiting for the fingerprint: a touch opens the sensor, even while Kapyiŋi listens for "annule".
+    if (phase === 'listening' && !wantsFinger && !contactSign) return stopRef.current();
+    if (phase === 'listening') { listening.current += 1; stopRef.current(); earcon.stop(); }
     if (phase === 'thinking' || phase === 'passkey') return;
     if (wantsFinger) return fingerprint();
     if (contactSign) return contactFingerprint(contactSign);
@@ -224,12 +253,12 @@ export default function Agent({ arg }) {
         return confirmPayment(data.prepareId).then((r) => { if (!r.ok) respond((r.errors || ['DEFAULT']).map((e) => t.errors[e] || t.errors.DEFAULT).join(' ')); });
       case 'USE_PASSKEY':
         setChoices([]);
-        await respond(v.agent.USE_PASSKEY());
+        await respond(v.agent.USE_PASSKEY(), { after: 'none' });
         return fingerprint({ auto: true });
       case 'CT_USE_PASSKEY':
         setChoices([]);
         setContactSign(data.prepareId);
-        await respond(v.agent.CT_USE_PASSKEY());
+        await respond(v.agent.CT_USE_PASSKEY(), { after: 'none' });
         return contactFingerprint(data.prepareId, { auto: true });
       case 'INVOICE_CONFIRMED':
         return handOver({ kind: 'invoice', url: data.payUrl, operationId: data.operationId });
