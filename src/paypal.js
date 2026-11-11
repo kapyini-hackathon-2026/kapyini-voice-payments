@@ -139,17 +139,53 @@ export function createPayPalClient({ clientId, secret, baseUrl, fetchImpl = fetc
     },
 
     // Used only by the demo script: the app's own Sandbox business account issues a bill to the payer.
-    async createAndSendInvoice({ recipientEmail, businessName, itemName, amount, currency, dueDate, note }) {
+    async createAndSendInvoice({
+      recipientEmail,
+      businessName,
+      itemName,
+      amount,
+      currency,
+      dueDate,
+      note,
+      requestId,
+    }) {
       const draft = await call('POST', '/v2/invoicing/invoices', {
+        requestId,
         body: {
-          detail: { currency_code: currency, note, payment_term: { due_date: dueDate } },
+          detail: {
+            currency_code: currency,
+            note,
+            payment_term: { due_date: dueDate },
+          },
           invoicer: { business_name: businessName },
-          primary_recipients: [{ billing_info: { email_address: recipientEmail } }],
-          items: [{ name: itemName, quantity: '1', unit_amount: { currency_code: currency, value: amount } }],
+          primary_recipients: [
+            { billing_info: { email_address: recipientEmail } },
+          ],
+          items: [
+            {
+              name: itemName,
+              quantity: '1',
+              unit_amount: { currency_code: currency, value: amount },
+            },
+          ],
         },
       });
+
       const id = draft.id || draft.href?.split('/').pop();
-      await call('POST', `/v2/invoicing/invoices/${encodeURIComponent(id)}/send`, { body: { send_to_invoicer: false } });
+
+      if (typeof id !== 'string' || !id.trim()) {
+        throw new PayPalError({
+          status: 502,
+          description: 'PayPal did not return a valid invoice ID.',
+        });
+      }
+
+      await call(
+        'POST',
+        `/v2/invoicing/invoices/${encodeURIComponent(id)}/send`,
+        { body: { send_to_invoicer: false } },
+      );
+
       return this.getInvoice(id);
     },
   };
